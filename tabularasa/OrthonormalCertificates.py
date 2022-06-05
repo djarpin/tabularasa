@@ -1,6 +1,6 @@
 import torch
 from torch import nn
-from torch.data.utils import TensorDataset, DataLoader
+from torch.utils.data import TensorDataset, DataLoader
 
 
 class OrthonormalCertificates:
@@ -16,21 +16,21 @@ class OrthonormalCertificates:
         self.shuffle = shuffle
 
     def fit(self, X):
-        certificates = nn.Linear(X.size(1), self.dim_certificates)
+        self.certificates = nn.Linear(X.shape[1], self.dim_certificates)
         loader = DataLoader(TensorDataset(torch.tensor(X)),
                             shuffle=self.shuffle,
                             batch_size=self.batch_size)
-        opt = torch.optim.Adam(certificates.parameters())
+        opt = torch.optim.Adam(self.certificates.parameters())
 
         for epoch in range(self.epochs):
             for xi in loader:
                 opt.zero_grad()
-                error = certificates(xi[0]).pow(2).mean()
-                penalty = (certificates.weight @ certificates.weight.t() - 
+                error = self.certificates(xi[0]).pow(2).mean()
+                penalty = (self.certificates.weight @ self.certificates.weight.t() -
                            torch.eye(self.dim_certificates)).pow(2).mean()
                 (error + penalty).backward()
                 opt.step()
 
-    def transform(X):
+    def transform(self, X):
         # Should probably do some type checking here
-        return self.certificates(torch.tensor(X)).pow(2).mean(1)
+        return self.certificates(torch.tensor(X)).pow(2).mean(1).detach().numpy()

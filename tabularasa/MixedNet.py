@@ -21,6 +21,9 @@ class MixedNet(nn.Module):
                                      integration_steps,
                                      device)
 
-    def forward(self, X_monotonic, X_non_monotonic, inner_layer=False):
+    def set_last_layer(self, inner=False):
+        self.umnn.set_last_layer(inner)
+
+    def forward(self, X_monotonic, X_non_monotonic):
         h = self.non_monotonic_net(X_non_monotonic)
-        return self.umnn(X_monotonic, h, inner_layer)
+        return self.umnn(X_monotonic, h)
