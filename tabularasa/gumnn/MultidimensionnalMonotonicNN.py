@@ -26,9 +26,12 @@ class SlowDMonotonicNN(nn.Module):
             net.nb_steps = nb_steps
         self.outer_net.nb_steps = nb_steps
 
-    def forward(self, mon_in, cond_in):
+    def forward(self, mon_in, cond_in, inner_layer=False):
         inner_out = torch.zeros(mon_in.shape).to(self.device)
         for i in range(self.mon_in):
             inner_out[:, [i]] = self.inner_nets[i](mon_in[:, [i]], cond_in)
         inner_sum = (torch.exp(self.weights).unsqueeze(0).expand(mon_in.shape[0], -1) * inner_out).sum(1).unsqueeze(1)
+        # (djarpin) Minor edit to return final layer for orthonormal certificates if needed
+        if inner_layer:
+            return torch.cat([inner_sum, cond_in], 1)
         return self.outer_net(inner_sum, cond_in)
