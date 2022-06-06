@@ -20,12 +20,20 @@ class IntegrandNN(nn.Module):
             ])
         self.net.pop()  # pop the last ReLU for the output layer
         self.net.append(nn.ELU())
+        self.inner_net = nn.Sequential(*self.net[:-2])
         self.net = nn.Sequential(*self.net)
+        self.inner_layer = False
 
     def to(self, device):
         self.net.to(device)
 
+    def set_last_layer(self, inner=False):
+        self.inner_layer = inner
+
     def forward(self, x, h):
+        # (darpin) Modified for orthonormal certificates
+        if self.inner_layer:
+            return self.inner_net(torch.cat((x, h), 1)) + 1.
         return self.net(torch.cat((x, h), 1)) + 1.
 
 class MonotonicNN(nn.Module):
@@ -45,10 +53,16 @@ class MonotonicNN(nn.Module):
         self.device = dev
         self.nb_steps = nb_steps
         self.to(dev)
+        self.inner_layer = False
 
     def to(self, device):
         self.net.to(device)
         self.integrand.to(device)
+
+    # (darpin) Modified for orthonormal certificates
+    def set_last_layer(self, inner=False):
+        self.inner_layer = inner
+        self.integrand.set_last_layer(inner)
 
     '''
     The forward procedure takes as input x which is the variable for which the integration must be made, h is just other conditionning variables.
@@ -58,4 +72,6 @@ class MonotonicNN(nn.Module):
         out = self.net(h)
         offset = out[:, [0]]
         scaling = torch.exp(out[:, [1]])
+        if self.inner_layer:
+            return self.integrand(x, h)
         return scaling*ParallelNeuralIntegral.apply(x0, x, self.integrand, _flatten(self.integrand.parameters()), h, self.nb_steps) + offset
