@@ -14,6 +14,7 @@ class OrthonormalCertificates:
         self.epochs = epochs
         self.batch_size = batch_size
         self.shuffle = shuffle
+        # Add final loss
 
     def fit(self, X):
         self.certificates = nn.Linear(X.shape[1], self.dim_certificates)
@@ -30,6 +31,8 @@ class OrthonormalCertificates:
                            torch.eye(self.dim_certificates)).pow(2).mean()
                 (error + penalty).backward()
                 opt.step()
+        # Set and report on final loss
+        # Do I need data standardization?  Optionally?  scikit moving away from this
 
     def transform(self, X):
         # Should probably do some type checking here
