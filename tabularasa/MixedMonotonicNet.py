@@ -2,7 +2,7 @@ import torch.nn as nn
 from tabularasa.gumnn.MultidimensionnalMonotonicNN import SlowDMonotonicNN
 
 
-class MixedNet(nn.Module):
+class MixedMonotonicNet(nn.Module):
 
     def __init__(self,
                  non_monotonic_net,
