@@ -9,7 +9,7 @@ class OrthonormalCertificates:
                  dim_certificates=64,
                  epochs=500,
                  batch_size=128,
-                 alpha=1
+                 alpha=1,
                  shuffle=True):
         self.dim_certificates = dim_certificates
         self.epochs = epochs
