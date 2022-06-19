@@ -50,8 +50,8 @@ class SimultaneousQuantileMixedMonotonicNet(MixedMonotonicNet):
                          integration_steps,
                          device)
         self.non_monotonic_net = non_monotonic_net
-        self.umnn = SlowDMonotonicNN(dim_monotonic,
-                                     dim_non_monotonic + 1,
+        self.umnn = SlowDMonotonicNN(dim_monotonic + 1,
+                                     dim_non_monotonic,
                                      layers,
                                      dim_out,
                                      integration_steps,
@@ -59,8 +59,7 @@ class SimultaneousQuantileMixedMonotonicNet(MixedMonotonicNet):
 
     def forward(self, X_monotonic, X_non_monotonic, qs):
         h = self.non_monotonic_net(X_non_monotonic)
-        h = torch.cat([h, qs], 1)
-        return self.umnn(X_monotonic, h)
+        return self.umnn(torch.cat([X_monotonic, qs], 1), h)
 
 
 ##################
