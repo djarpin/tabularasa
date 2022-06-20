@@ -80,7 +80,7 @@ scikit-learn @ file:///tmp/build/80754af9/scikit-learn_1598376899566/work
 scipy @ file:///tmp/build/80754af9/scipy_1597686649129/work
 Send2Trash==1.8.0
 six==1.15.0
-skorch==0.9.0
+skorch==0.11.0
 tabularasa @ file:///home/djarpin/Documents/rasa/v3/tabularasa
 tabulate==0.8.7
 tensorboard==2.2.0
