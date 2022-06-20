@@ -27,9 +27,39 @@ class SimultaneousQuantileLoss(torch.nn.Module):
         return (threshold * diff).mean()
 
 
-####################
-# Network definition
-####################
+#####################
+# Network definitions
+#####################
+
+
+class SimultaneousQuantileNet(MixedMonotonicNet):
+
+    def __init__(self,
+                 non_monotonic_net,
+                 dim_non_monotonic,
+                 dim_monotonic,
+                 layers=[512, 512, 64],
+                 dim_out=1,
+                 integration_steps=50,
+                 device='cpu'):
+        super().__init__(non_monotonic_net,
+                         dim_non_monotonic,
+                         dim_monotonic,
+                         layers,
+                         dim_out,
+                         integration_steps,
+                         device)
+        self.non_monotonic_net = non_monotonic_net
+        self.umnn = SlowDMonotonicNN(1,
+                                     dim_non_monotonic,
+                                     layers,
+                                     dim_out,
+                                     integration_steps,
+                                     device)
+
+    def forward(self, X_non_monotonic, qs):
+        h = self.non_monotonic_net(X_non_monotonic)
+        return self.umnn(qs, h)
 
 
 class SimultaneousQuantileMixedMonotonicNet(MixedMonotonicNet):
