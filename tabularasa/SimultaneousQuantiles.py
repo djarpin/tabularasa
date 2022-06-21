@@ -15,7 +15,7 @@ from tabularasa.gumnn.MultidimensionnalMonotonicNN import SlowDMonotonicNN
 ###############
 
 
-class SimultaneousQuantileLoss(torch.nn.Module):
+class SimultaneousQuantilesLoss(torch.nn.Module):
 
     def __init__(self, size_average=None, reduce=None, reduction: str = 'mean') -> None:
         super(SimultaneousQuantileLoss, self).__init__()
@@ -32,7 +32,7 @@ class SimultaneousQuantileLoss(torch.nn.Module):
 #####################
 
 
-class SimultaneousQuantileNet(MixedMonotonicNet):
+class SimultaneousQuantilesNet(MixedMonotonicNet):
 
     def __init__(self,
                  non_monotonic_net,
@@ -62,7 +62,7 @@ class SimultaneousQuantileNet(MixedMonotonicNet):
         return self.umnn(qs, h, last_hidden_layer)
 
 
-class SimultaneousQuantileMixedMonotonicNet(MixedMonotonicNet):
+class SimultaneousQuantilesMixedMonotonicNet(MixedMonotonicNet):
 
     def __init__(self,
                  non_monotonic_net,
@@ -97,7 +97,7 @@ class SimultaneousQuantileMixedMonotonicNet(MixedMonotonicNet):
 ##################
 
 
-class SimultaneousQuantileRegressor(NeuralNet, RegressorMixin):
+class SimultaneousQuantilesRegressor(NeuralNet, RegressorMixin):
 
     def __init__(self, module, *args, criterion=SimultaneousQuantileLoss, **kwargs):
         super(SimultaneousQuantileRegressor, self).__init__(module, *args, criterion=criterion, **kwargs)
