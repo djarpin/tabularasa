@@ -57,9 +57,9 @@ class SimultaneousQuantileNet(MixedMonotonicNet):
                                      integration_steps,
                                      device)
 
-    def forward(self, X_non_monotonic, qs):
+    def forward(self, X_non_monotonic, qs, last_hidden_layer=False):
         h = self.non_monotonic_net(X_non_monotonic)
-        return self.umnn(qs, h)
+        return self.umnn(qs, h, last_hidden_layer)
 
 
 class SimultaneousQuantileMixedMonotonicNet(MixedMonotonicNet):
@@ -87,9 +87,9 @@ class SimultaneousQuantileMixedMonotonicNet(MixedMonotonicNet):
                                      integration_steps,
                                      device)
 
-    def forward(self, X_monotonic, X_non_monotonic, qs):
+    def forward(self, X_monotonic, X_non_monotonic, qs, last_hidden_layer=False):
         h = self.non_monotonic_net(X_non_monotonic)
-        return self.umnn(torch.cat([X_monotonic, qs], 1), h)
+        return self.umnn(torch.cat([X_monotonic, qs], 1), h, last_hidden_layer)
 
 
 ##################
@@ -180,7 +180,7 @@ class SimultaneousQuantileRegressor(NeuralNet, RegressorMixin):
             'y_pred': y_pred,
         }
 
-    def evaluation_step(self, batch, training=False, q=0.5):
+    def evaluation_step(self, batch, training=False, q=0.5, last_hidden_layer=False):
         """Perform a forward step to produce the output used for
         prediction and scoring.
         Therefore, the module is set to evaluation mode by default
@@ -202,9 +202,9 @@ class SimultaneousQuantileRegressor(NeuralNet, RegressorMixin):
         Xi['qs'] = torch.full((list(Xi.values())[0].size(0), 1), q)
         with torch.set_grad_enabled(training):
             self._set_training(training)
-            return self.infer(Xi)
+            return self.infer(Xi, last_hidden_layer=last_hidden_layer)
 
-    def forward_iter(self, X, training=False, device='cpu', q=0.5):
+    def forward_iter(self, X, training=False, device='cpu', q=0.5, last_hidden_layer=False):
         """Yield outputs of module forward calls on each batch of data.
         The storage device of the yielded tensors is determined
         by the ``device`` parameter.
@@ -237,10 +237,10 @@ class SimultaneousQuantileRegressor(NeuralNet, RegressorMixin):
         dataset = self.get_dataset(X)
         iterator = self.get_iterator(dataset, training=training)
         for batch in iterator:
-            yp = self.evaluation_step(batch, training=training, q=q)
+            yp = self.evaluation_step(batch, training=training, q=q, last_hidden_layer=last_hidden_layer)
             yield to_device(yp, device=device)
 
-    def predict_proba(self, X, q=0.5):
+    def predict_proba(self, X, q=0.5, last_hidden_layer=False):
         """Return the output of the module's forward method as a numpy
         array.
         If the module's forward method returns multiple outputs as a
@@ -267,14 +267,14 @@ class SimultaneousQuantileRegressor(NeuralNet, RegressorMixin):
         """
         nonlin = self._get_predict_nonlinearity()
         y_probas = []
-        for yp in self.forward_iter(X, training=False, q=q):
+        for yp in self.forward_iter(X, training=False, q=q, last_hidden_layer=last_hidden_layer):
             yp = yp[0] if isinstance(yp, tuple) else yp
             yp = nonlin(yp)
             y_probas.append(to_numpy(yp))
         y_proba = np.concatenate(y_probas, 0)
         return y_proba
 
-    def predict(self, X, q=0.5):
+    def predict(self, X, q=0.5, last_hidden_layer=False):
         """Where applicable, return class labels for samples in X.
         If the module's forward method returns multiple outputs as a
         tuple, it is assumed that the first output contains the
@@ -298,4 +298,4 @@ class SimultaneousQuantileRegressor(NeuralNet, RegressorMixin):
         -------
         y_pred : numpy ndarray
         """
-        return self.predict_proba(X, q=q)
+        return self.predict_proba(X, q=q, last_hidden_layer=last_hidden_layer)
