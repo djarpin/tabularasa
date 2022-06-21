@@ -7,5 +7,5 @@ setup(name='tabularasa',
       author='David Arpin',
       author_email='arpin.david@gmail.com',
       license='BSD-3',
-      packages=['tabularasa'],
+      packages=['tabularasa', 'tabularasa.gumnn'],
       zip_safe=False)

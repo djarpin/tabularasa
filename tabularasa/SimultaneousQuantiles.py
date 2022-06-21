@@ -6,7 +6,7 @@ from skorch.dataset import unpack_data
 from skorch.utils import to_device
 from skorch.utils import to_numpy
 from skorch.utils import to_tensor
-from .MixedMonotonicNet import MixedMonotonicNet
+from tabularasa.MixedMonotonicNet import MixedMonotonicNet
 from tabularasa.gumnn.MultidimensionnalMonotonicNN import SlowDMonotonicNN
 
 
