@@ -94,6 +94,7 @@ class OrthonormalCertificatesRegressor(NeuralNet, RegressorMixin):
             y_pred = self.infer(Xi, **fit_params)
             percentiles = torch.arange(0.01, 1.01, 0.01)
             self._validation_percentiles = torch.quantile(y_pred, percentiles).numpy()
+            self._validation_max = self._validation_percentiles[-1]
             loss = self.get_loss(y_pred, yi, X=Xi, training=False)
         return {
             'loss': loss,
@@ -103,3 +104,7 @@ class OrthonormalCertificatesRegressor(NeuralNet, RegressorMixin):
     def percentile_predict(self, X):
         p = self.predict(X)
         return np.searchsorted(self._validation_percentiles, p)
+
+    def scaled_predict(self, X):
+        p = self.predict(X)
+        return p / self._validation_max
