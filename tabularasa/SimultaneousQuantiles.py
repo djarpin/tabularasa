@@ -1,12 +1,12 @@
-import torch
 import numpy as np
 from sklearn.base import RegressorMixin
+import torch
 from skorch import NeuralNet
 from skorch.dataset import unpack_data
 from skorch.utils import to_device
 from skorch.utils import to_numpy
 from skorch.utils import to_tensor
-from tabularasa.MixedMonotonicNet import MixedMonotonicNet
+from tabularasa.MixedMonotonic import MixedMonotonicNet
 from tabularasa.gumnn.MultidimensionnalMonotonicNN import SlowDMonotonicNN
 
 
@@ -18,7 +18,7 @@ from tabularasa.gumnn.MultidimensionnalMonotonicNN import SlowDMonotonicNN
 class SimultaneousQuantilesLoss(torch.nn.Module):
 
     def __init__(self, size_average=None, reduce=None, reduction: str = 'mean') -> None:
-        super(SimultaneousQuantileLoss, self).__init__()
+        super(SimultaneousQuantilesLoss, self).__init__()
         self.reduction = reduction
 
     def forward(self, input: torch.Tensor, target: torch.Tensor, qs: torch.Tensor) -> torch.Tensor:
@@ -99,8 +99,8 @@ class SimultaneousQuantilesMixedMonotonicNet(MixedMonotonicNet):
 
 class SimultaneousQuantilesRegressor(NeuralNet, RegressorMixin):
 
-    def __init__(self, module, *args, criterion=SimultaneousQuantileLoss, **kwargs):
-        super(SimultaneousQuantileRegressor, self).__init__(module, *args, criterion=criterion, **kwargs)
+    def __init__(self, module, *args, criterion=SimultaneousQuantilesLoss, **kwargs):
+        super(SimultaneousQuantilesRegressor, self).__init__(module, *args, criterion=criterion, **kwargs)
 
     def get_loss(self, y_pred, y_true, X, training=False):
         """Return the loss for this batch.
