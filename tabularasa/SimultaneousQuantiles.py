@@ -32,23 +32,16 @@ class SimultaneousQuantilesLoss(torch.nn.Module):
 #####################
 
 
-class SimultaneousQuantilesNet(MixedMonotonicNet):
+class SimultaneousQuantilesNet(torch.nn.Module):
 
     def __init__(self,
                  non_monotonic_net,
                  dim_non_monotonic,
-                 dim_monotonic,
                  layers=[512, 512, 64],
                  dim_out=1,
                  integration_steps=50,
                  device='cpu'):
-        super().__init__(non_monotonic_net,
-                         dim_non_monotonic,
-                         dim_monotonic,
-                         layers,
-                         dim_out,
-                         integration_steps,
-                         device)
+        super().__init__()
         self.non_monotonic_net = non_monotonic_net
         self.umnn = SlowDMonotonicNN(1,
                                      dim_non_monotonic,
