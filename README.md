@@ -35,3 +35,9 @@ TODO: What does `.forward()` need to include?
   - Continue to improve and evolve the default network that's used when a specific network isn't specified.
   - Better software engineering practices (tests, error messages, etc.).
   - Potentially expand into problems beyond regression.  It isn't necessarily clear how to generalize monotonicity for multiclass classification problems, but I'd be interested if others see value here.
+
+### TODO
+
+- Allow for networks with only monotonic inputs
+- Ensure GPU works across all networks and regressors
+- Save and reload
