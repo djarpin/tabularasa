@@ -6,7 +6,6 @@ from skorch.dataset import unpack_data
 from skorch.utils import to_device
 from skorch.utils import to_numpy
 from skorch.utils import to_tensor
-from tabularasa.MixedMonotonic import MixedMonotonicNet
 from tabularasa.gumnn.MultidimensionnalMonotonicNN import SlowDMonotonicNN
 
 
@@ -53,36 +52,6 @@ class SimultaneousQuantilesNet(torch.nn.Module):
     def forward(self, X_non_monotonic, qs, last_hidden_layer=False):
         h = self.non_monotonic_net(X_non_monotonic)
         return self.umnn(qs, h, last_hidden_layer)
-
-
-class SimultaneousQuantilesMixedMonotonicNet(MixedMonotonicNet):
-
-    def __init__(self,
-                 non_monotonic_net,
-                 dim_non_monotonic,
-                 dim_monotonic,
-                 layers=[512, 512, 64],
-                 dim_out=1,
-                 integration_steps=50,
-                 device='cpu'):
-        super().__init__(non_monotonic_net,
-                         dim_non_monotonic,
-                         dim_monotonic,
-                         layers,
-                         dim_out,
-                         integration_steps,
-                         device)
-        self.non_monotonic_net = non_monotonic_net
-        self.umnn = SlowDMonotonicNN(dim_monotonic + 1,
-                                     dim_non_monotonic,
-                                     layers,
-                                     dim_out,
-                                     integration_steps,
-                                     device)
-
-    def forward(self, X_monotonic, X_non_monotonic, qs, last_hidden_layer=False):
-        h = self.non_monotonic_net(X_non_monotonic)
-        return self.umnn(torch.cat([X_monotonic, qs], 1), h, last_hidden_layer)
 
 
 ##################
