@@ -7,16 +7,76 @@ from sklearn.preprocessing import StandardScaler
 
 class TabulaRasaRegressor:
 
-    def __init__(self, df, targets, monotonic_constraints=None):
+    def __init__(self,
+                 df,
+                 targets,
+                 monotonic_constraints={},
+                 **kwargs):
         # Set up data
         self.targets = targets
         self.monotonic_constraints = monotonic_constraints
         self.features = df.select_dtypes(include=['number', 'category', 'object']).columns.difference(targets).to_list()
         self._ingest(df)
-        # TODO: Set up networks
-        self.regressor = MixedMonotonicRegressor(MixedMonotonicNet, )
-        self.quantile_regressor = SimultaneousQuantileRegressor(SimultaneousQuantilesNet, )
-        self.uncertainty_regressor = OrthonormalCertificatesRegressor(OrthonormalCertificatesNet, )
+        # Set up networks
+        self._define_regressor()
+        self._define_quantile_regressor()
+        self._define_uncertainty_regressor()
+
+    def _define_regressor(non_monotonic_net=None,
+                          max_epochs=150,
+                          lr=0.1,
+                          optimizer=torch.optim.Adam,
+                          layers=[128, 128, 32],
+                          **kwargs):
+        if non_montonic_net is None:
+            self.regressor_non_monotonic_net = TabTransformer() #TODO
+        else:
+            # Will this be saved?
+            self.regressor_non_monotonic_net = non_monotonic_net
+        self.regressor_layers = layers
+        self.regressor = MixedMonotonicRegressor(MixedMonotonicNet,
+                                                 max_epochs=max_epochs,
+                                                 lr=lr,
+                                                 optimizer=optimizer,
+                                                 iterator_train__shuffle=True,
+                                                 module__non_monotonic_net=self.regressor_non_monotonic_net,
+                                                 module__dim_non_monotonic=len(self.numerics) - len(self.montonic_constraints) + sum(self.categoricals_out),
+                                                 module__dim_monotonic=len(self.monotonic_constraints),
+                                                 module__module_layers=layers,
+                                                 **kwargs)
+
+    def _define_quantile_regressor(non_monotonic_net=None,
+                                   max_epochs=150,
+                                   lr=0.1,
+                                   optimizer=torch.optim.Adam,
+                                   layers=[128, 128, 32],
+                                   **kwargs):
+        if non_montonic_net is None:
+            self.quantile_regressor_non_monotonic_net = TabTransformer() #TODO
+        else:
+            self.quantile_regressor_non_monotonic_net = non_monotonic_net
+        self.quantile_regressor = SimultaneousQuantileRegressor(SimultaneousQuantilesNet,
+                                                                max_epochs=max_epochs,
+                                                                lr=lr,
+                                                                optimizer=optimizer,
+                                                                iterator_train__shuffle=True,
+                                                                module__non_monotonic_net=self.quantile_regressor_non_monotonic_net,
+                                                                module__dim_non_monotonic=len(self.numerics) - len(self.montonic_constraints) + sum(self.categoricals_out),
+                                                                module__module_layers=layers,
+                                                                **kwargs)
+
+    def _define_uncertainty_regressor(dim_certificates=64,
+                                      max_epochs=150,
+                                      lr=0.1,
+                                      optimizer=torch.optim.Adam,
+                                      **kwargs):
+        self.uncertainty_regressor = OrthonormalCertificatesRegressor(OrthonormalCertificatesNet,
+                                                                      max_epochs=max_epochs,
+                                                                      lr=lr,
+                                                                      optimizer=optimizer,
+                                                                      iterator_train__shuffle=True,
+                                                                      module__dim_input=self.regressor_layers[-1] + len(self.monotonic_constraints)
+                                                                      module__dim_certificates=dim_certificates)
 
     def _ingest(self, df):
         self._prepare_categoricals(df)
