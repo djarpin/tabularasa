@@ -5,6 +5,9 @@ import tabularasa.utils as utils
 from sklearn.preprocessing import StandardScaler
 
 
+# TODO: Add MixedMonotonicRegressor with two X input classes
+
+
 class TabulaRasaRegressor:
 
     def __init__(self,
@@ -18,65 +21,65 @@ class TabulaRasaRegressor:
         self.features = df.select_dtypes(include=['number', 'category', 'object']).columns.difference(targets).to_list()
         self._ingest(df)
         # Set up networks
-        self._define_regressor()
-        self._define_quantile_regressor()
-        self._define_uncertainty_regressor()
+        self._define_model()
+        self._define_quantiles_model()
+        self._define_uncertainty_model()
 
-    def _define_regressor(non_monotonic_net=None,
-                          max_epochs=150,
-                          lr=0.1,
-                          optimizer=torch.optim.Adam,
-                          layers=[128, 128, 32],
-                          **kwargs):
+    def _define_model(non_monotonic_net=None,
+                      max_epochs=150,
+                      lr=0.1,
+                      optimizer=torch.optim.Adam,
+                      layers=[128, 128, 32],
+                      **kwargs):
         if non_montonic_net is None:
-            self.regressor_non_monotonic_net = TabTransformer() #TODO
+            self.model_non_monotonic_net = TabTransformer() #TODO
         else:
             # Will this be saved?
-            self.regressor_non_monotonic_net = non_monotonic_net
-        self.regressor_layers = layers
-        self.regressor = MixedMonotonicRegressor(MixedMonotonicNet,
-                                                 max_epochs=max_epochs,
-                                                 lr=lr,
-                                                 optimizer=optimizer,
-                                                 iterator_train__shuffle=True,
-                                                 module__non_monotonic_net=self.regressor_non_monotonic_net,
-                                                 module__dim_non_monotonic=len(self.numerics) - len(self.montonic_constraints) + sum(self.categoricals_out),
-                                                 module__dim_monotonic=len(self.monotonic_constraints),
-                                                 module__module_layers=layers,
-                                                 **kwargs)
+            self.model_non_monotonic_net = non_monotonic_net
+        self.model_layers = layers
+        self.model = MixedMonotonicRegressor(MixedMonotonicNet,
+                                             max_epochs=max_epochs,
+                                             lr=lr,
+                                             optimizer=optimizer,
+                                             iterator_train__shuffle=True,
+                                             module__non_monotonic_net=self.model_non_monotonic_net,
+                                             module__dim_non_monotonic=len(self.numerics_non_monotonic) + sum(self.categoricals_out),
+                                             module__dim_monotonic=len(self.monotonic_constraints),
+                                             module__module_layers=layers,
+                                             **kwargs)
 
-    def _define_quantile_regressor(non_monotonic_net=None,
-                                   max_epochs=150,
-                                   lr=0.1,
-                                   optimizer=torch.optim.Adam,
-                                   layers=[128, 128, 32],
-                                   **kwargs):
+    def _define_quantiles_model(non_monotonic_net=None,
+                               max_epochs=150,
+                               lr=0.1,
+                               optimizer=torch.optim.Adam,
+                               layers=[128, 128, 32],
+                               **kwargs):
         if non_montonic_net is None:
-            self.quantile_regressor_non_monotonic_net = TabTransformer() #TODO
+            self.quantiles_model_non_monotonic_net = TabTransformer() #TODO
         else:
-            self.quantile_regressor_non_monotonic_net = non_monotonic_net
-        self.quantile_regressor = SimultaneousQuantileRegressor(SimultaneousQuantilesNet,
-                                                                max_epochs=max_epochs,
-                                                                lr=lr,
-                                                                optimizer=optimizer,
-                                                                iterator_train__shuffle=True,
-                                                                module__non_monotonic_net=self.quantile_regressor_non_monotonic_net,
-                                                                module__dim_non_monotonic=len(self.numerics) - len(self.montonic_constraints) + sum(self.categoricals_out),
-                                                                module__module_layers=layers,
-                                                                **kwargs)
+            self.quantiles_model_non_monotonic_net = non_monotonic_net
+        self.quantiles_model = SimultaneousQuantileRegressor(SimultaneousQuantilesNet,
+                                                            max_epochs=max_epochs,
+                                                            lr=lr,
+                                                            optimizer=optimizer,
+                                                            iterator_train__shuffle=True,
+                                                            module__non_monotonic_net=self.quantiles_model_non_monotonic_net,
+                                                            module__dim_non_monotonic=len(self.numerics_non_monotonic) + sum(self.categoricals_out),
+                                                            module__module_layers=layers,
+                                                            **kwargs)
 
-    def _define_uncertainty_regressor(dim_certificates=64,
-                                      max_epochs=150,
-                                      lr=0.1,
-                                      optimizer=torch.optim.Adam,
-                                      **kwargs):
-        self.uncertainty_regressor = OrthonormalCertificatesRegressor(OrthonormalCertificatesNet,
-                                                                      max_epochs=max_epochs,
-                                                                      lr=lr,
-                                                                      optimizer=optimizer,
-                                                                      iterator_train__shuffle=True,
-                                                                      module__dim_input=self.regressor_layers[-1] + len(self.monotonic_constraints)
-                                                                      module__dim_certificates=dim_certificates)
+    def _define_uncertainty_model(dim_certificates=64,
+                                  max_epochs=150,
+                                  lr=0.1,
+                                  optimizer=torch.optim.Adam,
+                                  **kwargs):
+        self.uncertainty_model = OrthonormalCertificatesRegressor(OrthonormalCertificatesNet,
+                                                                  max_epochs=max_epochs,
+                                                                  lr=lr,
+                                                                  optimizer=optimizer,
+                                                                  iterator_train__shuffle=True,
+                                                                  module__dim_input=self.model_layers[-1] + len(self.monotonic_constraints)
+                                                                  module__dim_certificates=dim_certificates)
 
     def _ingest(self, df):
         self._prepare_categoricals(df)
@@ -91,10 +94,13 @@ class TabulaRasaRegressor:
             u = df[c].unique().sort()
             self.categoricals_in.append(len(u))
             self.categoricals_in.append(min(max(round(np.sqrt(len(u))), 1), 256))
-            self.categoricals_maps.append(dict(enumerate(u, 1)))
+            self.categoricals_maps.append({v: i for i, v in enumerate(u, 1)})
 
     def _prepare_numerics(self, df):
-        self.numerics = df[self.features].select_dtypes(include='number').columns.to_list()
+        numerics = df[self.features].select_dtypes(include='number').columns
+        self.numerics = numerics.to_list()
+        self.numerics_non_monotonic = numerics.difference(self.monotonic_constraints.keys()).to_list()
+        df[self.numerics] = df[self.numerics].astype('float32')
         self.numerics_scaler = StandardScaler()
         self.numerics_scaler.fit(df[self.numerics])
         self.targets_scaler = StandardScaler()
@@ -103,24 +109,58 @@ class TabulaRasaRegressor:
     def _preprocess(self, df):
         # What about overwriting?
         for c, m in zip(self.categoricals, self.categoricals_maps):
-            df[c] = df[c].map(m)
+            df[c] = df[c].map(m).astype('int')
+        # TODO: check dtype numerics
         df[self.numerics] = self.numerics_scaler.transform(df[self.numerics])
         for c, s in monotonic_constraints.items():
             df[c] = df[c] * s
+        return df
+
+    def _preprocess_targets(self, df):
         df[self.targets] = self.targets_scaler.transform(df[self.targets])
         return df
 
+    def _postprocess_targets(self, predictions):
+        return self.targets_scaler.inverse_transform(predictions)
+
     def fit(self, df):
-        df_processed = self._preprocess(df)
-        # TODO: Should make this flexible in case there aren't categoricals
-        pass
+        # TODO: Should make this flexible in case there aren't categoricals or non monotonic continuous features
+        df_processed = self._preprocess_targets(self._preprocess(df))
+        X = {'X_monotonic': df[sorted(self.monotonic_constraints.keys())].values,
+             'X_categorical': df[self.categoricals].values,
+             'X_non_monotonic': df[self.numerics_non_monotonic].values}
+        y = df[self.targets].values
+        print('*** Training core model ***')
+        self.model.fit(X, y)
+        e = y - self.model.predict(X)
+        print('*** Training model to predict quantiles ***')
+        self.quantiles_model.fit(X, e)
+        print('*** Training model to estimate uncertainty ***')
+        h = self.model.predict(X, last_hidden_layer=True)
+        self.uncertainty_model.fit(np.concatenate([X['X_monotonic'], h], axis=1))
 
     def predict(self, df):
-        self._preprocess(df)
-        pass
+        df_processed = self._preprocess(df)
+        X = {'X_monotonic': df[sorted(self.monotonic_constraints.keys())].values,
+             'X_categorical': df[self.categoricals].values,
+             'X_non_monotonic': df[self.numerics_non_monotonic].values}
+        y = self.model.predict(X)
+        return self._postprocess_targets(y)
 
     def predict_quantile(self, df, q=None):
-        pass
+        df_processed = self._preprocess(df)
+        X = {'X_monotonic': df[sorted(self.monotonic_constraints.keys())].values,
+             'X_categorical': df[self.categoricals].values,
+             'X_non_monotonic': df[self.numerics_non_monotonic].values}
+        y = self.model.predict(X)
+        e = self.quantiles_model.predict(X, q=q)
+        # TODO: Confirm this is the right standardization
+        return self._postprocess_targets(y + e)
 
-    def predict_uncertainty(self, df):
-        pass
+    def estimate_uncertainty(self, df):
+        df_processed = self._preprocess(df)
+        X = {'X_monotonic': df[sorted(self.monotonic_constraints.keys())].values,
+             'X_categorical': df[self.categoricals].values,
+             'X_non_monotonic': df[self.numerics_non_monotonic].values}
+        h = self.model.predict(X, last_hidden_layer=True)
+        return self.uncertainty_model.scaled_predict(np.concatenate([X['X_monotonic'], h], axis=1))
