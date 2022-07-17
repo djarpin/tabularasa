@@ -8,11 +8,18 @@ from tabularasa.SimultaneousQuantiles import SimultaneousQuantilesRegressor, Sim
 from tabularasa.OrthonormalCertificates import OrthonormalCertificatesRegressor, OrthonormalCertificatesNet
 
 
-class TabulaRasaMixedMonotonicNet(MixedMonotonicNet):
+class TabTransformerMixedMonotonicNet(MixedMonotonicNet):
 
     def forward(self, X_monotonic, X_categorical, X_non_monotonic, last_hidden_layer=False):
         h = self.non_monotonic_net(x_categ=X_categorical, x_cont=X_non_monotonic)
         return self.umnn(X_monotonic, h, last_hidden_layer)
+
+
+class TabTransformerSimultaneqousQuantilesNet(SimultaneousQuantilesNet):
+
+    def forward(self, X_categorical, X_non_monotonic, qs, last_hidden_layer=False):
+        h = self.non_monotonic_net(x_categ=X_categorical, x_cont=X_non_monotonic)
+        return self.umnn(qs, h, last_hidden_layer)
 
 
 class TabulaRasaRegressor:
@@ -39,12 +46,21 @@ class TabulaRasaRegressor:
                       layers=[128, 128, 32],
                       **kwargs):
         if non_montonic_net is None:
-            self.model_non_monotonic_net = TabTransformer() #TODO
+            self.model_non_monotonic_net = TabTransformer(categories=tuple(self.categoricals_in),
+                                                          num_continuous=len(self.numerics_non_monotonic),
+                                                          dim=32,
+                                                          dim_out=layers[-1],
+                                                          depth=6,
+                                                          heads=8,
+                                                          attn_dropout=0.1,
+                                                          ff_dropout=0.1,
+                                                          mlp_hidden_units=(4, 2),
+                                                          mlp_act=nn.ReLU())
         else:
             # Will this be saved?
             self.model_non_monotonic_net = non_monotonic_net
         self.model_layers = layers
-        self.model = MixedMonotonicRegressor(TabulaRasaMixedMonotonicNet,
+        self.model = MixedMonotonicRegressor(TabTransformerMixedMonotonicNet,
                                              max_epochs=max_epochs,
                                              lr=lr,
                                              optimizer=optimizer,
@@ -62,7 +78,16 @@ class TabulaRasaRegressor:
                                layers=[128, 128, 32],
                                **kwargs):
         if non_montonic_net is None:
-            self.quantiles_model_non_monotonic_net = TabTransformer() #TODO
+            self.quantiles_model_non_monotonic_net = TabTransformer(categories=tuple(self.categoricals_in),
+                                                                    num_continuous=len(self.numerics),
+                                                                    dim=32,
+                                                                    dim_out=layers[-1],
+                                                                    depth=6,
+                                                                    heads=8,
+                                                                    attn_dropout=0.1,
+                                                                    ff_dropout=0.1,
+                                                                    mlp_hidden_units=(4, 2),
+                                                                    mlp_act=nn.ReLU())
         else:
             self.quantiles_model_non_monotonic_net = non_monotonic_net
         self.quantiles_model = SimultaneousQuantilesRegressor(SimultaneousQuantilesNet,
@@ -117,8 +142,7 @@ class TabulaRasaRegressor:
         # What about overwriting?
         for c, m in zip(self.categoricals, self.categoricals_maps):
             df[c] = df[c].map(m).astype('int')
-        # TODO: check dtype numerics
-        df[self.numerics] = self.numerics_scaler.transform(df[self.numerics])
+        df[self.numerics] = self.numerics_scaler.transform(df[self.numerics]).astype('float32')
         for c, s in monotonic_constraints.items():
             df[c] = df[c] * s
         return df
@@ -139,12 +163,14 @@ class TabulaRasaRegressor:
         y = df[self.targets].values
         print('*** Training core model ***')
         self.model.fit(X, y)
-        e = y - self.model.predict(X)
-        print('*** Training model to predict quantiles ***')
-        self.quantiles_model.fit(X, e)
         print('*** Training model to estimate uncertainty ***')
         h = self.model.predict(X, last_hidden_layer=True)
         self.uncertainty_model.fit(np.concatenate([X['X_monotonic'], h], axis=1))
+        print('*** Training model to predict quantiles ***')
+        X = {'X_categorical': df[self.categoricals].values,
+             'X_non_monotonic': df[self.numerics].values}
+        e = y - self.model.predict(X)
+        self.quantiles_model.fit(X, e)
 
     def predict(self, df):
         df_processed = self._preprocess(df)
@@ -156,12 +182,12 @@ class TabulaRasaRegressor:
 
     def predict_quantile(self, df, q=None):
         df_processed = self._preprocess(df)
-        X = {'X_monotonic': df[sorted(self.monotonic_constraints.keys())].values,
-             'X_categorical': df[self.categoricals].values,
-             'X_non_monotonic': df[self.numerics_non_monotonic].values}
-        y = self.model.predict(X)
-        e = self.quantiles_model.predict(X, q=q)
-        # TODO: Confirm this is the right standardization
+        y = self.model.predict({'X_monotonic': df[sorted(self.monotonic_constraints.keys())].values,
+                                'X_categorical': df[self.categoricals].values,
+                                'X_non_monotonic': df[self.numerics_non_monotonic].values})
+        e = self.quantiles_model.predict({'X_categorical': df[self.categoricals].values,
+                                          'X_non_monotonic': df[self.numerics].values},
+                                         q=q)
         return self._postprocess_targets(y + e)
 
     def estimate_uncertainty(self, df):
