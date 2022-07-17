@@ -3,9 +3,16 @@ import numpy as np
 import torch
 import tabularasa.utils as utils
 from sklearn.preprocessing import StandardScaler
+from tabularasa.MixedMonotonic import MixedMonotonicRegressor, MixedMonotonicNet
+from tabularasa.SimultaneousQuantiles import SimultaneousQuantilesRegressor, SimultaneousQuantilesNet
+from tabularasa.OrthonormalCertificates import OrthonormalCertificatesRegressor, OrthonormalCertificatesNet
 
 
-# TODO: Add MixedMonotonicRegressor with two X input classes
+class TabulaRasaMixedMonotonicNet(MixedMonotonicNet):
+
+    def forward(self, X_monotonic, X_categorical, X_non_monotonic, last_hidden_layer=False):
+        h = self.non_monotonic_net(x_categ=X_categorical, x_cont=X_non_monotonic)
+        return self.umnn(X_monotonic, h, last_hidden_layer)
 
 
 class TabulaRasaRegressor:
@@ -37,7 +44,7 @@ class TabulaRasaRegressor:
             # Will this be saved?
             self.model_non_monotonic_net = non_monotonic_net
         self.model_layers = layers
-        self.model = MixedMonotonicRegressor(MixedMonotonicNet,
+        self.model = MixedMonotonicRegressor(TabulaRasaMixedMonotonicNet,
                                              max_epochs=max_epochs,
                                              lr=lr,
                                              optimizer=optimizer,
@@ -58,15 +65,15 @@ class TabulaRasaRegressor:
             self.quantiles_model_non_monotonic_net = TabTransformer() #TODO
         else:
             self.quantiles_model_non_monotonic_net = non_monotonic_net
-        self.quantiles_model = SimultaneousQuantileRegressor(SimultaneousQuantilesNet,
-                                                            max_epochs=max_epochs,
-                                                            lr=lr,
-                                                            optimizer=optimizer,
-                                                            iterator_train__shuffle=True,
-                                                            module__non_monotonic_net=self.quantiles_model_non_monotonic_net,
-                                                            module__dim_non_monotonic=len(self.numerics_non_monotonic) + sum(self.categoricals_out),
-                                                            module__module_layers=layers,
-                                                            **kwargs)
+        self.quantiles_model = SimultaneousQuantilesRegressor(SimultaneousQuantilesNet,
+                                                              max_epochs=max_epochs,
+                                                              lr=lr,
+                                                              optimizer=optimizer,
+                                                              iterator_train__shuffle=True,
+                                                              module__non_monotonic_net=self.quantiles_model_non_monotonic_net,
+                                                              module__dim_non_monotonic=len(self.numerics_non_monotonic) + sum(self.categoricals_out),
+                                                              module__module_layers=layers,
+                                                              **kwargs)
 
     def _define_uncertainty_model(dim_certificates=64,
                                   max_epochs=150,
