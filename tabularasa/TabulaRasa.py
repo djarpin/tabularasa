@@ -1,8 +1,8 @@
 import pandas as pd
 import numpy as np
 import torch
-import tabularasa.utils as utils
 from sklearn.preprocessing import StandardScaler
+from tab_transformer_pytorch import TabTransformer
 from tabularasa.MixedMonotonic import MixedMonotonicRegressor, MixedMonotonicNet
 from tabularasa.SimultaneousQuantiles import SimultaneousQuantilesRegressor, SimultaneousQuantilesNet
 from tabularasa.OrthonormalCertificates import OrthonormalCertificatesRegressor, OrthonormalCertificatesNet
@@ -39,13 +39,14 @@ class TabulaRasaRegressor:
         self._define_quantiles_model()
         self._define_uncertainty_model()
 
-    def _define_model(non_monotonic_net=None,
+    def _define_model(self,
+                      non_monotonic_net=None,
                       max_epochs=150,
                       lr=0.1,
                       optimizer=torch.optim.Adam,
                       layers=[128, 128, 32],
                       **kwargs):
-        if non_montonic_net is None:
+        if non_monotonic_net is None:
             self.model_non_monotonic_net = TabTransformer(categories=tuple(self.categoricals_in),
                                                           num_continuous=len(self.numerics_non_monotonic),
                                                           dim=32,
@@ -54,8 +55,8 @@ class TabulaRasaRegressor:
                                                           heads=8,
                                                           attn_dropout=0.1,
                                                           ff_dropout=0.1,
-                                                          mlp_hidden_units=(4, 2),
-                                                          mlp_act=nn.ReLU())
+                                                          mlp_hidden_mults=(4, 2),
+                                                          mlp_act=torch.nn.ReLU())
         else:
             # Will this be saved?
             self.model_non_monotonic_net = non_monotonic_net
@@ -71,13 +72,14 @@ class TabulaRasaRegressor:
                                              module__module_layers=layers,
                                              **kwargs)
 
-    def _define_quantiles_model(non_monotonic_net=None,
-                               max_epochs=150,
-                               lr=0.1,
-                               optimizer=torch.optim.Adam,
-                               layers=[128, 128, 32],
-                               **kwargs):
-        if non_montonic_net is None:
+    def _define_quantiles_model(self,
+                                non_monotonic_net=None,
+                                max_epochs=150,
+                                lr=0.1,
+                                optimizer=torch.optim.Adam,
+                                layers=[128, 128, 32],
+                                **kwargs):
+        if non_monotonic_net is None:
             self.quantiles_model_non_monotonic_net = TabTransformer(categories=tuple(self.categoricals_in),
                                                                     num_continuous=len(self.numerics),
                                                                     dim=32,
@@ -86,8 +88,8 @@ class TabulaRasaRegressor:
                                                                     heads=8,
                                                                     attn_dropout=0.1,
                                                                     ff_dropout=0.1,
-                                                                    mlp_hidden_units=(4, 2),
-                                                                    mlp_act=nn.ReLU())
+                                                                    mlp_hidden_mults=(4, 2),
+                                                                    mlp_act=torch.nn.ReLU())
         else:
             self.quantiles_model_non_monotonic_net = non_monotonic_net
         self.quantiles_model = SimultaneousQuantilesRegressor(SimultaneousQuantilesNet,
@@ -100,7 +102,8 @@ class TabulaRasaRegressor:
                                                               module__module_layers=layers,
                                                               **kwargs)
 
-    def _define_uncertainty_model(dim_certificates=64,
+    def _define_uncertainty_model(self,
+                                  dim_certificates=64,
                                   max_epochs=150,
                                   lr=0.1,
                                   optimizer=torch.optim.Adam,
@@ -110,7 +113,7 @@ class TabulaRasaRegressor:
                                                                   lr=lr,
                                                                   optimizer=optimizer,
                                                                   iterator_train__shuffle=True,
-                                                                  module__dim_input=self.model_layers[-1] + len(self.monotonic_constraints)
+                                                                  module__dim_input=self.model_layers[-1] + len(self.monotonic_constraints),
                                                                   module__dim_certificates=dim_certificates)
 
     def _ingest(self, df):
@@ -123,7 +126,10 @@ class TabulaRasaRegressor:
         self.categoricals_out = []
         self.categoricals_maps = []
         for c in self.categoricals:
-            u = df[c].unique().sort()
+            if df[c].dtype == 'category':
+                u = sorted(df[c].cat.categories.values)
+            else:
+                u = sorted(df[c].unique())
             self.categoricals_in.append(len(u))
             self.categoricals_in.append(min(max(round(np.sqrt(len(u))), 1), 256))
             self.categoricals_maps.append({v: i for i, v in enumerate(u, 1)})
