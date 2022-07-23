@@ -42,16 +42,16 @@ class SimultaneousQuantilesNet(torch.nn.Module):
                  device='cpu'):
         super().__init__()
         self.non_monotonic_net = non_monotonic_net
-        self.umnn = SlowDMonotonicNN(1,
-                                     dim_non_monotonic,
-                                     layers,
-                                     dim_out,
-                                     integration_steps,
-                                     device)
+        self.monotonic_net = SlowDMonotonicNN(1,
+                                              dim_non_monotonic,
+                                              layers,
+                                              dim_out,
+                                              integration_steps,
+                                              device)
 
     def forward(self, X_non_monotonic, qs, last_hidden_layer=False):
         h = self.non_monotonic_net(X_non_monotonic)
-        return self.umnn(qs, h, last_hidden_layer)
+        return self.monotonic_net(qs, h, last_hidden_layer)
 
 
 ##################

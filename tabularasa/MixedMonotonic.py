@@ -26,16 +26,16 @@ class MixedMonotonicNet(nn.Module):
                  device='cpu'):
         super().__init__()
         self.non_monotonic_net = non_monotonic_net
-        self.umnn = SlowDMonotonicNN(dim_monotonic,
-                                     dim_non_monotonic,
-                                     layers,
-                                     dim_out,
-                                     integration_steps,
-                                     device)
+        self.monotonic_net = SlowDMonotonicNN(dim_monotonic,
+                                              dim_non_monotonic,
+                                              layers,
+                                              dim_out,
+                                              integration_steps,
+                                              device)
 
     def forward(self, X_monotonic, X_non_monotonic, last_hidden_layer=False):
         h = self.non_monotonic_net(X_non_monotonic)
-        return self.umnn(X_monotonic, h, last_hidden_layer)
+        return self.monotonic_net(X_monotonic, h, last_hidden_layer)
 
 
 ##################

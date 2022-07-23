@@ -12,14 +12,14 @@ class TabTransformerMixedMonotonicNet(MixedMonotonicNet):
 
     def forward(self, X_monotonic, X_categorical, X_non_monotonic, last_hidden_layer=False):
         h = self.non_monotonic_net(x_categ=X_categorical, x_cont=X_non_monotonic)
-        return self.umnn(X_monotonic, h, last_hidden_layer)
+        return self.monotonic_net(X_monotonic, h, last_hidden_layer)
 
 
 class TabTransformerSimultaneqousQuantilesNet(SimultaneousQuantilesNet):
 
     def forward(self, X_categorical, X_non_monotonic, qs, last_hidden_layer=False):
         h = self.non_monotonic_net(x_categ=X_categorical, x_cont=X_non_monotonic)
-        return self.umnn(qs, h, last_hidden_layer)
+        return self.monotonic_net(qs, h, last_hidden_layer)
 
 
 class TabulaRasaRegressor:
@@ -69,7 +69,8 @@ class TabulaRasaRegressor:
                                              module__non_monotonic_net=self.model_non_monotonic_net,
                                              module__dim_non_monotonic=len(self.numerics_non_monotonic) + sum(self.categoricals_out),
                                              module__dim_monotonic=len(self.monotonic_constraints),
-                                             module__module_layers=layers,
+                                             module__layers=layers,
+                                             module__dim_out=len(self.targets),
                                              **kwargs)
 
     def _define_quantiles_model(self,
@@ -99,7 +100,8 @@ class TabulaRasaRegressor:
                                                               iterator_train__shuffle=True,
                                                               module__non_monotonic_net=self.quantiles_model_non_monotonic_net,
                                                               module__dim_non_monotonic=len(self.numerics_non_monotonic) + sum(self.categoricals_out),
-                                                              module__module_layers=layers,
+                                                              module__layers=layers,
+                                                              module__dim_out=len(self.targets),
                                                               **kwargs)
 
     def _define_uncertainty_model(self,
@@ -121,6 +123,7 @@ class TabulaRasaRegressor:
         self._prepare_numerics(df)
 
     def _prepare_categoricals(self, df):
+        # TODO: allow for specifying dim in and out
         self.categoricals = df[self.features].select_dtypes(include=['category', 'object']).columns.to_list()
         self.categoricals_in = []
         self.categoricals_out = []
@@ -147,9 +150,9 @@ class TabulaRasaRegressor:
     def _preprocess(self, df):
         # What about overwriting?
         for c, m in zip(self.categoricals, self.categoricals_maps):
-            df[c] = df[c].map(m).astype('int')
+            df[c] = df[c].map(m).astype('int').fillna(0)
         df[self.numerics] = self.numerics_scaler.transform(df[self.numerics]).astype('float32')
-        for c, s in monotonic_constraints.items():
+        for c, s in self.monotonic_constraints.items():
             df[c] = df[c] * s
         return df
 
@@ -163,43 +166,43 @@ class TabulaRasaRegressor:
     def fit(self, df):
         # TODO: Should make this flexible in case there aren't categoricals or non monotonic continuous features
         df_processed = self._preprocess_targets(self._preprocess(df))
-        X = {'X_monotonic': df[sorted(self.monotonic_constraints.keys())].values,
-             'X_categorical': df[self.categoricals].values,
-             'X_non_monotonic': df[self.numerics_non_monotonic].values}
-        y = df[self.targets].values
+        X = {'X_monotonic': df_processed[sorted(self.monotonic_constraints.keys())].values,
+             'X_categorical': df_processed[self.categoricals].values,
+             'X_non_monotonic': df_processed[self.numerics_non_monotonic].values}
+        y = df_processed[self.targets].values
         print('*** Training core model ***')
         self.model.fit(X, y)
         print('*** Training model to estimate uncertainty ***')
         h = self.model.predict(X, last_hidden_layer=True)
         self.uncertainty_model.fit(np.concatenate([X['X_monotonic'], h], axis=1))
         print('*** Training model to predict quantiles ***')
-        X = {'X_categorical': df[self.categoricals].values,
-             'X_non_monotonic': df[self.numerics].values}
+        X = {'X_categorical': df_processed[self.categoricals].values,
+             'X_non_monotonic': df_processed[self.numerics].values}
         e = y - self.model.predict(X)
         self.quantiles_model.fit(X, e)
 
     def predict(self, df):
         df_processed = self._preprocess(df)
-        X = {'X_monotonic': df[sorted(self.monotonic_constraints.keys())].values,
-             'X_categorical': df[self.categoricals].values,
-             'X_non_monotonic': df[self.numerics_non_monotonic].values}
+        X = {'X_monotonic': df_processed[sorted(self.monotonic_constraints.keys())].values,
+             'X_categorical': df_processed[self.categoricals].values,
+             'X_non_monotonic': df_processed[self.numerics_non_monotonic].values}
         y = self.model.predict(X)
         return self._postprocess_targets(y)
 
     def predict_quantile(self, df, q=None):
         df_processed = self._preprocess(df)
-        y = self.model.predict({'X_monotonic': df[sorted(self.monotonic_constraints.keys())].values,
-                                'X_categorical': df[self.categoricals].values,
-                                'X_non_monotonic': df[self.numerics_non_monotonic].values})
-        e = self.quantiles_model.predict({'X_categorical': df[self.categoricals].values,
-                                          'X_non_monotonic': df[self.numerics].values},
+        y = self.model.predict({'X_monotonic': df_processed[sorted(self.monotonic_constraints.keys())].values,
+                                'X_categorical': df_processed[self.categoricals].values,
+                                'X_non_monotonic': df_processed[self.numerics_non_monotonic].values})
+        e = self.quantiles_model.predict({'X_categorical': df_processed[self.categoricals].values,
+                                          'X_non_monotonic': df_processed[self.numerics].values},
                                          q=q)
         return self._postprocess_targets(y + e)
 
     def estimate_uncertainty(self, df):
         df_processed = self._preprocess(df)
-        X = {'X_monotonic': df[sorted(self.monotonic_constraints.keys())].values,
-             'X_categorical': df[self.categoricals].values,
-             'X_non_monotonic': df[self.numerics_non_monotonic].values}
+        X = {'X_monotonic': df_processed[sorted(self.monotonic_constraints.keys())].values,
+             'X_categorical': df_processed[self.categoricals].values,
+             'X_non_monotonic': df_processed[self.numerics_non_monotonic].values}
         h = self.model.predict(X, last_hidden_layer=True)
         return self.uncertainty_model.scaled_predict(np.concatenate([X['X_monotonic'], h], axis=1))
