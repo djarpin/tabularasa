@@ -15,7 +15,7 @@ class TabTransformerMixedMonotonicNet(MixedMonotonicNet):
         return self.monotonic_net(X_monotonic, h, last_hidden_layer)
 
 
-class TabTransformerSimultaneqousQuantilesNet(SimultaneousQuantilesNet):
+class TabTransformerSimultaneousQuantilesNet(SimultaneousQuantilesNet):
 
     def forward(self, X_categorical, X_non_monotonic, qs, last_hidden_layer=False):
         h = self.non_monotonic_net(x_categ=X_categorical, x_cont=X_non_monotonic)
@@ -35,13 +35,14 @@ class TabulaRasaRegressor:
         self.features = df.select_dtypes(include=['number', 'category', 'object']).columns.difference(targets).to_list()
         self._ingest(df)
         # Set up networks
+        # TODO: get kwargs working with define model
         self._define_model()
         self._define_quantiles_model()
         self._define_uncertainty_model()
 
     def _define_model(self,
                       non_monotonic_net=None,
-                      max_epochs=150,
+                      max_epochs=25,
                       lr=0.1,
                       optimizer=torch.optim.Adam,
                       layers=[128, 128, 32],
@@ -50,7 +51,7 @@ class TabulaRasaRegressor:
             self.model_non_monotonic_net = TabTransformer(categories=tuple(self.categoricals_in),
                                                           num_continuous=len(self.numerics_non_monotonic),
                                                           dim=32,
-                                                          dim_out=layers[-1],
+                                                          dim_out=len(self.numerics_non_monotonic) + sum(self.categoricals_out),
                                                           depth=6,
                                                           heads=8,
                                                           attn_dropout=0.1,
@@ -75,7 +76,7 @@ class TabulaRasaRegressor:
 
     def _define_quantiles_model(self,
                                 non_monotonic_net=None,
-                                max_epochs=150,
+                                max_epochs=25,
                                 lr=0.1,
                                 optimizer=torch.optim.Adam,
                                 layers=[128, 128, 32],
@@ -84,7 +85,7 @@ class TabulaRasaRegressor:
             self.quantiles_model_non_monotonic_net = TabTransformer(categories=tuple(self.categoricals_in),
                                                                     num_continuous=len(self.numerics),
                                                                     dim=32,
-                                                                    dim_out=layers[-1],
+                                                                    dim_out=len(self.numerics_non_monotonic) + sum(self.categoricals_out),
                                                                     depth=6,
                                                                     heads=8,
                                                                     attn_dropout=0.1,
@@ -93,7 +94,7 @@ class TabulaRasaRegressor:
                                                                     mlp_act=torch.nn.ReLU())
         else:
             self.quantiles_model_non_monotonic_net = non_monotonic_net
-        self.quantiles_model = SimultaneousQuantilesRegressor(SimultaneousQuantilesNet,
+        self.quantiles_model = SimultaneousQuantilesRegressor(TabTransformerSimultaneousQuantilesNet,
                                                               max_epochs=max_epochs,
                                                               lr=lr,
                                                               optimizer=optimizer,
@@ -106,8 +107,8 @@ class TabulaRasaRegressor:
 
     def _define_uncertainty_model(self,
                                   dim_certificates=64,
-                                  max_epochs=150,
-                                  lr=0.1,
+                                  max_epochs=200,
+                                  lr=0.01,
                                   optimizer=torch.optim.Adam,
                                   **kwargs):
         self.uncertainty_model = OrthonormalCertificatesRegressor(OrthonormalCertificatesNet,
@@ -133,28 +134,29 @@ class TabulaRasaRegressor:
                 u = sorted(df[c].cat.categories.values)
             else:
                 u = sorted(df[c].unique())
-            self.categoricals_in.append(len(u))
-            self.categoricals_in.append(min(max(round(np.sqrt(len(u))), 1), 256))
+            self.categoricals_in.append(len(u) + 1)
+            self.categoricals_out.append(min(max(round(np.sqrt(len(u))), 1), 256))
             self.categoricals_maps.append({v: i for i, v in enumerate(u, 1)})
 
     def _prepare_numerics(self, df):
         numerics = df[self.features].select_dtypes(include='number').columns
         self.numerics = numerics.to_list()
         self.numerics_non_monotonic = numerics.difference(self.monotonic_constraints.keys()).to_list()
-        df[self.numerics] = df[self.numerics].astype('float32')
+        df[self.numerics] = df[self.numerics]
         self.numerics_scaler = StandardScaler()
         self.numerics_scaler.fit(df[self.numerics])
         self.targets_scaler = StandardScaler()
         self.targets_scaler.fit(df[self.targets])
 
     def _preprocess(self, df):
-        # What about overwriting?
+        # TODO: figure out more memory efficient way to do this
+        dfc = df.copy()
         for c, m in zip(self.categoricals, self.categoricals_maps):
-            df[c] = df[c].map(m).astype('int').fillna(0)
-        df[self.numerics] = self.numerics_scaler.transform(df[self.numerics]).astype('float32')
+            dfc[c] = dfc[c].map(m).astype('int').fillna(0)
+        dfc[self.numerics] = self.numerics_scaler.transform(dfc[self.numerics])
         for c, s in self.monotonic_constraints.items():
-            df[c] = df[c] * s
-        return df
+            dfc[c] = dfc[c] * s
+        return dfc
 
     def _preprocess_targets(self, df):
         df[self.targets] = self.targets_scaler.transform(df[self.targets])
@@ -166,43 +168,45 @@ class TabulaRasaRegressor:
     def fit(self, df):
         # TODO: Should make this flexible in case there aren't categoricals or non monotonic continuous features
         df_processed = self._preprocess_targets(self._preprocess(df))
-        X = {'X_monotonic': df_processed[sorted(self.monotonic_constraints.keys())].values,
-             'X_categorical': df_processed[self.categoricals].values,
-             'X_non_monotonic': df_processed[self.numerics_non_monotonic].values}
-        y = df_processed[self.targets].values
-        print('*** Training core model ***')
+        X = {'X_monotonic': df_processed[sorted(self.monotonic_constraints.keys())].values.astype('float32'),
+             'X_categorical': df_processed[self.categoricals].values.astype('int'),
+             'X_non_monotonic': df_processed[self.numerics_non_monotonic].values.astype('float32')}
+        y = df_processed[self.targets].values.astype('float32')
+        print('*** Training expectation model ***')
         self.model.fit(X, y)
-        print('*** Training model to estimate uncertainty ***')
+        print('')
+        print('*** Training epistemic uncertainty model ***')
         h = self.model.predict(X, last_hidden_layer=True)
         self.uncertainty_model.fit(np.concatenate([X['X_monotonic'], h], axis=1))
-        print('*** Training model to predict quantiles ***')
-        X = {'X_categorical': df_processed[self.categoricals].values,
-             'X_non_monotonic': df_processed[self.numerics].values}
+        print('')
+        print('*** Training quantile prediction model ***')
         e = y - self.model.predict(X)
+        X = {'X_categorical': df_processed[self.categoricals].values.astype('int'),
+             'X_non_monotonic': df_processed[self.numerics].values.astype('float32')}
         self.quantiles_model.fit(X, e)
 
     def predict(self, df):
         df_processed = self._preprocess(df)
-        X = {'X_monotonic': df_processed[sorted(self.monotonic_constraints.keys())].values,
-             'X_categorical': df_processed[self.categoricals].values,
-             'X_non_monotonic': df_processed[self.numerics_non_monotonic].values}
+        X = {'X_monotonic': df_processed[sorted(self.monotonic_constraints.keys())].values.astype('float32'),
+             'X_categorical': df_processed[self.categoricals].values.astype('int'),
+             'X_non_monotonic': df_processed[self.numerics_non_monotonic].values.astype('float32')}
         y = self.model.predict(X)
         return self._postprocess_targets(y)
 
     def predict_quantile(self, df, q=None):
         df_processed = self._preprocess(df)
-        y = self.model.predict({'X_monotonic': df_processed[sorted(self.monotonic_constraints.keys())].values,
-                                'X_categorical': df_processed[self.categoricals].values,
-                                'X_non_monotonic': df_processed[self.numerics_non_monotonic].values})
-        e = self.quantiles_model.predict({'X_categorical': df_processed[self.categoricals].values,
-                                          'X_non_monotonic': df_processed[self.numerics].values},
+        y = self.model.predict({'X_monotonic': df_processed[sorted(self.monotonic_constraints.keys())].values.astype('float32'),
+                                'X_categorical': df_processed[self.categoricals].values.astype('int'),
+                                'X_non_monotonic': df_processed[self.numerics_non_monotonic].values.astype('float32')})
+        e = self.quantiles_model.predict({'X_categorical': df_processed[self.categoricals].values.astype('int'),
+                                          'X_non_monotonic': df_processed[self.numerics].values.astype('float32')},
                                          q=q)
         return self._postprocess_targets(y + e)
 
     def estimate_uncertainty(self, df):
         df_processed = self._preprocess(df)
-        X = {'X_monotonic': df_processed[sorted(self.monotonic_constraints.keys())].values,
-             'X_categorical': df_processed[self.categoricals].values,
-             'X_non_monotonic': df_processed[self.numerics_non_monotonic].values}
+        X = {'X_monotonic': df_processed[sorted(self.monotonic_constraints.keys())].values.astype('float32'),
+             'X_categorical': df_processed[self.categoricals].values.astype('int'),
+             'X_non_monotonic': df_processed[self.numerics_non_monotonic].values.astype('float32')}
         h = self.model.predict(X, last_hidden_layer=True)
         return self.uncertainty_model.scaled_predict(np.concatenate([X['X_monotonic'], h], axis=1))
