@@ -43,7 +43,7 @@ class TabulaRasaRegressor:
     def _define_model(self,
                       non_monotonic_net=None,
                       max_epochs=25,
-                      lr=0.1,
+                      lr=0.01,
                       optimizer=torch.optim.Adam,
                       layers=[128, 128, 32],
                       **kwargs):
@@ -77,7 +77,7 @@ class TabulaRasaRegressor:
     def _define_quantiles_model(self,
                                 non_monotonic_net=None,
                                 max_epochs=25,
-                                lr=0.1,
+                                lr=0.01,
                                 optimizer=torch.optim.Adam,
                                 layers=[128, 128, 32],
                                 **kwargs):
@@ -159,15 +159,17 @@ class TabulaRasaRegressor:
         return dfc
 
     def _preprocess_targets(self, df):
-        df[self.targets] = self.targets_scaler.transform(df[self.targets])
-        return df
+        # TODO: figure out more memory efficient way to do this
+        dfc = df.copy()
+        dfc[self.targets] = self.targets_scaler.transform(dfc[self.targets])
+        return dfc
 
     def _postprocess_targets(self, predictions):
         return self.targets_scaler.inverse_transform(predictions)
 
     def fit(self, df):
         # TODO: Should make this flexible in case there aren't categoricals or non monotonic continuous features
-        df_processed = self._preprocess_targets(self._preprocess(df))
+        df_processed = self._preprocess_targets(self._preprocess(df)).copy()
         X = {'X_monotonic': df_processed[sorted(self.monotonic_constraints.keys())].values.astype('float32'),
              'X_categorical': df_processed[self.categoricals].values.astype('int'),
              'X_non_monotonic': df_processed[self.numerics_non_monotonic].values.astype('float32')}
