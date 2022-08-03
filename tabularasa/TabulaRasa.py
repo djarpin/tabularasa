@@ -35,14 +35,13 @@ class TabulaRasaRegressor:
         self.features = df.select_dtypes(include=['number', 'category', 'object']).columns.difference(targets).to_list()
         self._ingest(df)
         # Set up networks
-        # TODO: get kwargs working with define model
-        self._define_model()
-        self._define_quantiles_model()
-        self._define_uncertainty_model()
+        self._define_model(**kwargs)
+        self._define_quantiles_model(**kwargs)
+        self._define_uncertainty_model(**kwargs)
 
     def _define_model(self,
                       non_monotonic_net=None,
-                      max_epochs=25,
+                      max_epochs=100,
                       lr=0.01,
                       optimizer=torch.optim.Adam,
                       layers=[128, 128, 32],
@@ -76,7 +75,7 @@ class TabulaRasaRegressor:
 
     def _define_quantiles_model(self,
                                 non_monotonic_net=None,
-                                max_epochs=25,
+                                max_epochs=100,
                                 lr=0.01,
                                 optimizer=torch.optim.Adam,
                                 layers=[128, 128, 32],
@@ -107,7 +106,7 @@ class TabulaRasaRegressor:
 
     def _define_uncertainty_model(self,
                                   dim_certificates=64,
-                                  max_epochs=200,
+                                  max_epochs=250,
                                   lr=0.01,
                                   optimizer=torch.optim.Adam,
                                   **kwargs):
