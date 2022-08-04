@@ -7,7 +7,7 @@
 This library is heavily indebted to the following works:
 
 - [Antoine Wehenkel and Gilles Louppe. "Unconstrained Monotonic Neural Networks." (2019)](https://arxiv.org/abs/1908.05164) ([repo](https://github.com/AWehenkel/generalized-UMNN/)).
-- [Natasa Tagasovska and David Lopez-Paz (2019)](https://arxiv.org/abs/1811.00908) ([repo](https://github.com/facebookresearch/SingleModelUncertainty)).
+- [Natasa Tagasovska and David Lopez-Paz "Single-Model Uncertainties for Deep Learning" (2019)](https://arxiv.org/abs/1811.00908) ([repo](https://github.com/facebookresearch/SingleModelUncertainty)).
 - [Huang et al. "TabTransformer: Tabular Data Modeling Using Contextual Embeddings" (2020)](https://arxiv.org/abs/2012.06678) ([repo](https://github.com/lucidrains/tab-transformer-pytorch))
 
 With the goal to provide a usable open source implementation that combines the functionality of all three papers with minimal overhead and more flexibility.
