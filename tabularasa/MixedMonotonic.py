@@ -24,6 +24,32 @@ class MixedMonotonicNet(nn.Module):
                  dim_out=1,
                  integration_steps=50,
                  device='cpu'):
+        '''
+        Neural network with a mix of monotonic and non-monotonically constrained features
+
+        Parameters
+        ----------
+        non_monotonic_net : torch.nn.Module
+            The initialized PyTorch network for non-monotonically constrained features
+            The `.forward()` method for this network must accept a single argument: X_non_monotonic
+        dim_non_monotonic : int
+            Output dimension of `non_monotonic_net`
+        dim_monotonic : int
+            Input dimension (number of monotonically constrained features)
+        layers : list[int], optional
+            Neurons in each hidden layer (defaults to [512, 512, 64])
+        dim_out : int, optional
+            Output dimension of network (number of target variables to predict) (defaults to 1)
+        integration_steps : int, optional
+            Number of integration steps in Clenshaw-Curtis Quadrature Method (defaults to 50)
+        device : str, optional
+            'cpu' or 'cuda:0' (defaults to 'cpu')
+
+        Returns
+        -------
+        None
+            Initialized neural network
+        '''
         super().__init__()
         self.non_monotonic_net = non_monotonic_net
         self.monotonic_net = SlowDMonotonicNN(dim_monotonic,
@@ -34,6 +60,24 @@ class MixedMonotonicNet(nn.Module):
                                               device)
 
     def forward(self, X_monotonic, X_non_monotonic, last_hidden_layer=False):
+        '''
+        Forward method for neural network
+
+        Parameters
+        ----------
+        X_monotonic : torch.Tensor
+            Monotonically constrained features
+        X_non_monotonic : torch.Tensor
+            Non-monotonically constrained features
+        last_hidden_layer : bool, optional
+            Return activations from last hidden layer in the neural network
+            Needed for Orthonormal Certificates to estimate epistemic uncertainty (defaults to False)
+
+        Returns
+        -------
+        torch.Tensor
+            Output from monotonically constrained neural network
+        '''
         h = self.non_monotonic_net(X_non_monotonic)
         return self.monotonic_net(X_monotonic, h, last_hidden_layer)
 
@@ -60,6 +104,8 @@ class MixedMonotonicRegressor(NeuralNet, RegressorMixin):
           A single batch returned by the data loader.
         training : bool (default=False)
           Whether to set the module to train mode or not.
+        last_hidden_layer : bool, optional
+          Return activations from last hidden layer in network (defaults to False)
         Returns
         -------
         y_infer
@@ -96,6 +142,8 @@ class MixedMonotonicRegressor(NeuralNet, RegressorMixin):
           more memory available there. For performance reasons
           this might be changed to a specific CUDA device,
           e.g. 'cuda:0'.
+        last_hidden_layer : bool, optional
+          Return activations from last hidden layer in network (defaults to False)
         Yields
         ------
         yp : torch tensor
@@ -128,6 +176,8 @@ class MixedMonotonicRegressor(NeuralNet, RegressorMixin):
             * a Dataset
           If this doesn't work with your data, you have to pass a
           ``Dataset`` that can deal with the data.
+        last_hidden_layer : bool, optional
+          Return activations from last hidden layer in network (defaults to False)
         Returns
         -------
         y_proba : numpy ndarray
@@ -161,6 +211,8 @@ class MixedMonotonicRegressor(NeuralNet, RegressorMixin):
             * a Dataset
           If this doesn't work with your data, you have to pass a
           ``Dataset`` that can deal with the data.
+        last_hidden_layer : bool, optional
+          Return activations from last hidden layer in network (defaults to False)
         Returns
         -------
         y_pred : numpy ndarray

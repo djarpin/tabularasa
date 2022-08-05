@@ -16,11 +16,48 @@ from skorch.utils import to_tensor
 class OrthonormalCertificatesLoss(torch.nn.Module):
 
     def __init__(self, size_average=None, reduce=None, reduction: str = 'mean', alpha=1) -> None:
+        '''
+        Loss function for Orthonormal Certificates to estimate epistemic uncertainty
+
+        Parameters
+        ----------
+        size_average : bool, optional
+            Deprecated (see `reduction`) (defaults to None)
+        reduce : bool, optional
+            Deprecated (see `reduction`) (defaults to None)
+        reduction : str, optional
+            Specifies the reduction applied to the output (defaults to 'mean')
+        alpha : float, optional
+            Scalar for the size of the orthonormality penalty in loss term
+            (see "Single-Model Uncertainties (2019)" paper for details) (defaults to 1)
+
+        Returns
+        -------
+        None
+            Initializes loss class
+        '''
         super(OrthonormalCertificatesLoss, self).__init__()
         self.reduction = reduction
         self.alpha = alpha
 
     def forward(self, input: torch.Tensor, target: torch.Tensor, weights: torch.Tensor) -> torch.Tensor:
+        '''
+        Calculate loss
+
+        Parameters
+        ----------
+        input : torch.Tensor
+            Activations from last hidden layer, passed through certificates, squared, and averaged
+        target : torch.Tensor
+            Not used
+        weights : torch.Tensor
+            Weight values from linear mappings (certificates)
+
+        Returns
+        -------
+        torch.Tensor
+            Orthonormal Certificates loss
+        '''
         error = input.mean()
         penalty = (weights @ weights.t() - torch.eye(weights.size(0))).pow(2).mean()
         return error + self.alpha * penalty
@@ -34,10 +71,38 @@ class OrthonormalCertificatesLoss(torch.nn.Module):
 class OrthonormalCertificatesNet(torch.nn.Module):
 
     def __init__(self, dim_input, dim_certificates=64):
+        '''
+        Orthonormal Certificates neural network
+
+        Parameters
+        ----------
+        dim_input : int
+            Number of neurons in final hidden layer of the neural network
+        dim_certificates : int, optional
+            Number of linear mappings (certificates)
+
+        Returns
+        -------
+        None
+            Initializes Orthonormal Certificates neural network
+        '''
         super().__init__()
         self.certificates = torch.nn.Linear(dim_input, dim_certificates)
 
     def forward(self, X):
+        '''
+        Calculate epistemic uncertainty
+
+        Parameters
+        ----------
+        X : torch.Tensor
+            Activations from last hidden layer of the predictive network
+
+        Returns
+        -------
+        torch.Tensor
+            Epistemic uncertainty
+        '''
         return self.certificates(X).pow(2).mean(1)
 
 
@@ -102,9 +167,38 @@ class OrthonormalCertificatesRegressor(NeuralNet, RegressorMixin):
         }
 
     def percentile_predict(self, X):
+        '''
+        Using epistemic uncertainty values from the validation data,
+        what percentile would uncertainty estimates for the input be?
+
+        Parameters
+        ----------
+        X : numpy.ndarray
+            Activations from last hidden layer of the predictive network
+
+        Returns
+        -------
+        numpy.ndarray
+            Epistemic uncertainty percentile, based on validation data
+            (100 is high uncertainty, 0 is low)
+        '''
         p = self.predict(X)
         return np.searchsorted(self._validation_percentiles, p)
 
     def scaled_predict(self, X):
+        '''
+        Ratio between current uncertainty and maximum epistemic uncertainty value from the validation data
+
+        Parameters
+        ----------
+        X : numpy.ndarray
+            Activations from last hidden layer of the predictive network
+
+        Returns
+        -------
+        numpy.ndarray
+            Ratio of epistemic uncertainty to max value seen in validation data
+            (> 1 is higher uncertainty than seen in validation, < 1 is less)
+        '''
         p = self.predict(X)
         return p / self._validation_max
