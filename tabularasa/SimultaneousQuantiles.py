@@ -17,10 +17,44 @@ from tabularasa.gumnn.MultidimensionnalMonotonicNN import SlowDMonotonicNN
 class SimultaneousQuantilesLoss(torch.nn.Module):
 
     def __init__(self, size_average=None, reduce=None, reduction: str = 'mean') -> None:
+        '''
+        Loss function for Simultaneous Quantiles to estimate aleatoric uncertainty
+
+        Parameters
+        ----------
+        size_average : bool, optional
+            Deprecated (see `reduction`) (defaults to None)
+        reduce : bool, optional
+            Deprecated (see `reduction`) (defaults to None)
+        reduction : str, optional
+            Specifies the reduction applied to the output (defaults to 'mean')
+
+        Returns
+        -------
+        None
+            Initializes loss class
+        '''
         super(SimultaneousQuantilesLoss, self).__init__()
         self.reduction = reduction
 
     def forward(self, input: torch.Tensor, target: torch.Tensor, qs: torch.Tensor) -> torch.Tensor:
+        '''
+        Calculate pinball loss
+
+        Parameters
+        ----------
+        input : torch.Tensor
+            Prediction from Simultaneous Quantiles model
+        target : torch.Tensor
+            Actual value being predicted
+        qs : torch.Tensor
+            Random quantile included as a predictive feature in Simultaneous Quantiles model
+
+        Returns
+        -------
+        torch.Tensor
+            Pinball loss
+        '''
         diff = input - target
         threshold = (diff.ge(0).float() - qs).detach()
         return (threshold * diff).mean()
@@ -40,6 +74,30 @@ class SimultaneousQuantilesNet(torch.nn.Module):
                  dim_out=1,
                  integration_steps=50,
                  device='cpu'):
+        '''
+        Simultaneous Quantiles neural network
+
+        Parameters
+        ----------
+        non_monotonic_net : torch.nn.Module
+            The initialized PyTorch network for non-monotonically constrained features
+            The `.forward()` method for this network must accept a single argument: X_non_monotonic
+        dim_non_monotonic : int
+            Output dimension of `non_monotonic_net`
+        layers : list[int], optional
+            Neurons in each hidden layer (defaults to [512, 512, 64])
+        dim_out : int, optional
+            Output dimension of network (number of target variables to predict) (defaults to 1)
+        integration_steps : int, optional
+            Number of integration steps in Clenshaw-Curtis Quadrature Method (defaults to 50)
+        device : str, optional
+            'cpu' or 'cuda:0' (defaults to 'cpu')
+
+        Returns
+        -------
+        None
+            Initializes Simultaneous Quantiles neural network
+        '''
         super().__init__()
         self.non_monotonic_net = non_monotonic_net
         self.monotonic_net = SlowDMonotonicNN(1,
@@ -50,6 +108,24 @@ class SimultaneousQuantilesNet(torch.nn.Module):
                                               device)
 
     def forward(self, X_non_monotonic, qs, last_hidden_layer=False):
+        '''
+        Forward method for neural network
+
+        Parameters
+        ----------
+        X_non_monotonic : torch.Tensor
+            Non-monotonically constrained features
+        qs : torch.Tensor
+            Quantile for each record
+        last_hidden_layer : bool, optional
+            Return activations from last hidden layer in the neural network
+            Needed for Orthonormal Certificates to estimate epistemic uncertainty (defaults to False)
+
+        Returns
+        -------
+        torch.Tensor
+            Output from Simultaneous Quantiles neural network
+        '''
         h = self.non_monotonic_net(X_non_monotonic)
         return self.monotonic_net(qs, h, last_hidden_layer)
 
@@ -154,6 +230,10 @@ class SimultaneousQuantilesRegressor(NeuralNet, RegressorMixin):
           A single batch returned by the data loader.
         training : bool (default=False)
           Whether to set the module to train mode or not.
+        q : float, optional
+          Quantile to predict for (defaults to 0.5)
+        last_hidden_layer : bool, optional
+          Return activations from last hidden layer in network (defaults to False)
         Returns
         -------
         y_infer
@@ -191,6 +271,10 @@ class SimultaneousQuantilesRegressor(NeuralNet, RegressorMixin):
           more memory available there. For performance reasons
           this might be changed to a specific CUDA device,
           e.g. 'cuda:0'.
+        q : float, optional
+          Quantile to predict for (defaults to 0.5)
+        last_hidden_layer : bool, optional
+          Return activations from last hidden layer in network (defaults to False)
         Yields
         ------
         yp : torch tensor
@@ -223,6 +307,10 @@ class SimultaneousQuantilesRegressor(NeuralNet, RegressorMixin):
             * a Dataset
           If this doesn't work with your data, you have to pass a
           ``Dataset`` that can deal with the data.
+        q : float, optional
+          Quantile to predict for (defaults to 0.5)
+        last_hidden_layer : bool, optional
+          Return activations from last hidden layer in network (defaults to False)
         Returns
         -------
         y_proba : numpy ndarray
@@ -256,6 +344,10 @@ class SimultaneousQuantilesRegressor(NeuralNet, RegressorMixin):
             * a Dataset
           If this doesn't work with your data, you have to pass a
           ``Dataset`` that can deal with the data.
+        q : float, optional
+          Quantile to predict for (defaults to 0.5)
+        last_hidden_layer : bool, optional
+          Return activations from last hidden layer in network (defaults to False)
         Returns
         -------
         y_pred : numpy ndarray
