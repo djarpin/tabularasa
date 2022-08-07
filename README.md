@@ -12,6 +12,15 @@ This library is heavily indebted to the following works:
 
 With the goal to provide a usable open source implementation that combines the functionality of all three papers with minimal overhead and more flexibility.
 
+### Setup
+
+**Recommended:**
+
+1. Create a new conda environment (Python 3.9+)
+1. Move to the root directory of this repository
+1. `pip install -r requirements.txt`
+1. `pip install .`
+
 ### Usage
 
 Please see the example notebooks for a walkthrough of how to use TabulaRasa:
@@ -40,8 +49,10 @@ Please see the example notebooks for a walkthrough of how to use TabulaRasa:
 
 - Clean up wasted memory usage in `TabulaRasaRegressor()`
 - Make save and reload effortless
+- Make outputs from examples more deterministic
 - Generate partial dependence plots within the library
 - Get GPU working
 - Write basic unit tests
 - Allow for networks with all the combinations of monotonic, non-monotonic, and categorical features
 - Publish in PyPI
+- Improve real-time inference latency
