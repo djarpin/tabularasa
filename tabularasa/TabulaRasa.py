@@ -3,8 +3,9 @@ import numpy as np
 import torch
 from sklearn.preprocessing import StandardScaler
 from tab_transformer_pytorch import TabTransformer
+from tabularasa.gumnn.MultidimensionnalMonotonicNN import SlowDMonotonicNN
 from tabularasa.MixedMonotonic import MixedMonotonicRegressor, MixedMonotonicNet
-from tabularasa.SimultaneousQuantiles import SimultaneousQuantilesRegressor, SimultaneousQuantilesNet
+from tabularasa.SimultaneousQuantiles import SimultaneousQuantilesRegressor
 from tabularasa.OrthonormalCertificates import OrthonormalCertificatesRegressor, OrthonormalCertificatesNet
 
 
@@ -40,11 +41,52 @@ class TabTransformerMixedMonotonicNet(MixedMonotonicNet):
         return self.monotonic_net(X_monotonic, h, last_hidden_layer)
 
 
-class TabTransformerSimultaneousQuantilesNet(SimultaneousQuantilesNet):
+class TabTransformerSimultaneousQuantilesNet(torch.nn.Module):
 
-    def forward(self, X_categorical, X_non_monotonic, qs, last_hidden_layer=False):
+    def __init__(self,
+                 non_monotonic_net,
+                 dim_non_monotonic,
+                 dim_monotonic,
+                 layers=[512, 512, 64],
+                 dim_out=1,
+                 integration_steps=50,
+                 device='cpu'):
         '''
-        Update `MixedMonotonicNet().forward()` to support separate categorical and non-monotonic continuous inputs
+        Create alternate SimultaneousQuantilesNet to support monotonically constrained features
+
+        Parameters
+        ----------
+        non_monotonic_net : torch.nn.Module
+            The initialized PyTorch network for non-monotonically constrained features
+            The `.forward()` method for this network must accept a single argument: X_non_monotonic
+        dim_non_monotonic : int
+            Output dimension of `non_monotonic_net`
+        layers : list[int], optional
+            Neurons in each hidden layer (defaults to [512, 512, 64])
+        dim_out : int, optional
+            Output dimension of network (number of target variables to predict) (defaults to 1)
+        integration_steps : int, optional
+            Number of integration steps in Clenshaw-Curtis Quadrature Method (defaults to 50)
+        device : str, optional
+            'cpu' or 'cuda:0' (defaults to 'cpu')
+
+        Returns
+        -------
+        None
+            Initializes Simultaneous Quantiles neural network
+        '''
+        super().__init__()
+        self.non_monotonic_net = non_monotonic_net
+        self.monotonic_net = SlowDMonotonicNN(dim_monotonic + 1,
+                                              dim_non_monotonic,
+                                              layers,
+                                              dim_out,
+                                              integration_steps,
+                                              device)
+
+    def forward(self, X_monotonic, X_categorical, X_non_monotonic, qs, last_hidden_layer=False):
+        '''
+        Create alternate `SimultaneousQuantilesNet().forward()` to support separate categorical and non-monotonic continuous inputs
 
         Parameters
         ----------
@@ -64,7 +106,7 @@ class TabTransformerSimultaneousQuantilesNet(SimultaneousQuantilesNet):
             Output from Simultaneous Quantiles neural network
         '''
         h = self.non_monotonic_net(x_categ=X_categorical, x_cont=X_non_monotonic)
-        return self.monotonic_net(qs, h, last_hidden_layer)
+        return self.monotonic_net(torch.cat([X_monotonic, qs], axis=1), h, last_hidden_layer)
 
 
 ##################
@@ -199,7 +241,7 @@ class TabulaRasaRegressor:
         '''
         if non_monotonic_net is None:
             self.quantiles_model_non_monotonic_net = TabTransformer(categories=tuple(self.categoricals_in),
-                                                                    num_continuous=len(self.numerics),
+                                                                    num_continuous=len(self.numerics_non_monotonic),
                                                                     dim=32,
                                                                     dim_out=len(self.numerics_non_monotonic) + sum(self.categoricals_out),
                                                                     depth=6,
@@ -218,6 +260,7 @@ class TabulaRasaRegressor:
                                                               iterator_train__shuffle=True,
                                                               module__non_monotonic_net=self.quantiles_model_non_monotonic_net,
                                                               module__dim_non_monotonic=len(self.numerics_non_monotonic) + sum(self.categoricals_out),
+                                                              module__dim_monotonic=len(self.monotonic_constraints),
                                                               module__layers=layers,
                                                               module__dim_out=len(self.targets),
                                                               **kwargs)
@@ -407,10 +450,7 @@ class TabulaRasaRegressor:
         self.uncertainty_model.fit(np.concatenate([X['X_monotonic'], h], axis=1))
         print('')
         print('*** Training quantile prediction model ***')
-        # TODO: Is this subtraction helping without monotonically constraining the quantiles?
         e = y - self.model.predict(X)
-        X = {'X_categorical': df_processed[self.categoricals].values.astype('int'),
-             'X_non_monotonic': df_processed[self.numerics].values.astype('float32')}
         self.quantiles_model.fit(X, e)
 
     def predict(self, df):
@@ -451,12 +491,11 @@ class TabulaRasaRegressor:
             Predicted quantile
         '''
         df_processed = self._preprocess(df)
-        y = self.model.predict({'X_monotonic': df_processed[sorted(self.monotonic_constraints.keys())].values.astype('float32'),
-                                'X_categorical': df_processed[self.categoricals].values.astype('int'),
-                                'X_non_monotonic': df_processed[self.numerics_non_monotonic].values.astype('float32')})
-        e = self.quantiles_model.predict({'X_categorical': df_processed[self.categoricals].values.astype('int'),
-                                          'X_non_monotonic': df_processed[self.numerics].values.astype('float32')},
-                                         q=q)
+        X = {'X_monotonic': df_processed[sorted(self.monotonic_constraints.keys())].values.astype('float32'),
+             'X_categorical': df_processed[self.categoricals].values.astype('int'),
+             'X_non_monotonic': df_processed[self.numerics_non_monotonic].values.astype('float32')}
+        y = self.model.predict(X)
+        e = self.quantiles_model.predict(X, q=q)
         return self._postprocess_targets(y + e)
 
     def estimate_uncertainty(self, df):
