@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 import torch
 from sklearn.preprocessing import StandardScaler
+from skorch.callbacks import EarlyStopping
 from tab_transformer_pytorch import TabTransformer
 from tabularasa.gumnn.MultidimensionnalMonotonicNN import SlowDMonotonicNN
 from tabularasa.MixedMonotonic import MixedMonotonicRegressor, MixedMonotonicNet
@@ -77,8 +78,8 @@ class TabTransformerSimultaneousQuantilesNet(torch.nn.Module):
         '''
         super().__init__()
         self.non_monotonic_net = non_monotonic_net
-        self.monotonic_net = SlowDMonotonicNN(dim_monotonic + 1,
-                                              dim_non_monotonic,
+        self.monotonic_net = SlowDMonotonicNN(dim_monotonic,
+                                              dim_non_monotonic + 1,
                                               layers,
                                               dim_out,
                                               integration_steps,
@@ -106,7 +107,8 @@ class TabTransformerSimultaneousQuantilesNet(torch.nn.Module):
             Output from Simultaneous Quantiles neural network
         '''
         h = self.non_monotonic_net(x_categ=X_categorical, x_cont=X_non_monotonic)
-        return self.monotonic_net(torch.cat([X_monotonic, qs], axis=1), h, last_hidden_layer)
+        # TODO: Figure out if there is a way to keep qs monotonic
+        return self.monotonic_net(X_monotonic, torch.cat([h, qs], 1), last_hidden_layer)
 
 
 ##################
@@ -203,6 +205,7 @@ class TabulaRasaRegressor:
                                              lr=lr,
                                              optimizer=optimizer,
                                              iterator_train__shuffle=True,
+                                             callbacks=[EarlyStopping(patience=max_epochs // 10)],
                                              module__non_monotonic_net=self.model_non_monotonic_net,
                                              module__dim_non_monotonic=len(self.numerics_non_monotonic) + sum(self.categoricals_out),
                                              module__dim_monotonic=len(self.monotonic_constraints),
@@ -257,6 +260,7 @@ class TabulaRasaRegressor:
                                                               max_epochs=max_epochs,
                                                               lr=lr,
                                                               optimizer=optimizer,
+                                                              callbacks=[EarlyStopping(patience=max_epochs // 10)],
                                                               iterator_train__shuffle=True,
                                                               module__non_monotonic_net=self.quantiles_model_non_monotonic_net,
                                                               module__dim_non_monotonic=len(self.numerics_non_monotonic) + sum(self.categoricals_out),
@@ -294,6 +298,7 @@ class TabulaRasaRegressor:
                                                                   lr=lr,
                                                                   optimizer=optimizer,
                                                                   iterator_train__shuffle=True,
+                                                                  callbacks=[EarlyStopping(patience=max_epochs // 10)],
                                                                   module__dim_input=self.model_layers[-1] + len(self.monotonic_constraints),
                                                                   module__dim_certificates=dim_certificates)
 
