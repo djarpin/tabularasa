@@ -119,8 +119,6 @@ class TabTransformerSimultaneousQuantilesNet(torch.nn.Module):
 class TabulaRasaRegressor:
 
     def __init__(self,
-                 df,
-                 targets,
                  monotonic_constraints={},
                  **kwargs):
         '''
@@ -129,12 +127,6 @@ class TabulaRasaRegressor:
 
         Paramters
         ---------
-        df : pandas.DataFrame
-            Data frame that represents training input (all number, category, and object columns will be used).
-            No training is done during the initialization phase, but categories are counted and feature scalers are setup.
-            So, if using a sample of the full dataset, it should be representative of the whole.
-        targets : list[str]
-            Column name(s) for target variable on `df`
         monotonic_constraints : dict
             Lookup where keys are column names of features to be monotonically constrained.
             And values are 1 or -1 to dictate increasing or decreasing relationship with the target (respectively)
@@ -144,16 +136,20 @@ class TabulaRasaRegressor:
         None
             Initializes model object
         '''
-        # Set up data
-        self.targets = targets
+        self.trained = False
         self.monotonic_constraints = monotonic_constraints
-        self.features = df.select_dtypes(include=['number', 'category', 'object']).columns.difference(targets).to_list()
-        self._ingest(df)
+        self.kwargs = kwargs
+
+    def _setup(self, X, y):
+        # Set up data
+        self.features = X.select_dtypes(include=['number', 'category', 'object']).columns.to_list()
+        self.dim_y = y.shape[1]
+        self._ingest(X, y)
         # Set up networks
         # TODO: Get all kwargs working deeper into the model definitions
-        self._define_model(**kwargs)
-        self._define_quantiles_model(**kwargs)
-        self._define_uncertainty_model(**kwargs)
+        self._define_model(**self.kwargs)
+        self._define_quantiles_model(**self.kwargs)
+        self._define_uncertainty_model(**self.kwargs)
 
     def _define_model(self,
                       non_monotonic_net=None,
@@ -210,7 +206,7 @@ class TabulaRasaRegressor:
                                              module__dim_non_monotonic=len(self.numerics_non_monotonic) + sum(self.categoricals_out),
                                              module__dim_monotonic=len(self.monotonic_constraints),
                                              module__layers=layers,
-                                             module__dim_out=len(self.targets),
+                                             module__dim_out=self.dim_y,
                                              **kwargs)
 
     def _define_quantiles_model(self,
@@ -266,7 +262,7 @@ class TabulaRasaRegressor:
                                                               module__dim_non_monotonic=len(self.numerics_non_monotonic) + sum(self.categoricals_out),
                                                               module__dim_monotonic=len(self.monotonic_constraints),
                                                               module__layers=layers,
-                                                              module__dim_out=len(self.targets),
+                                                              module__dim_out=self.dim_y,
                                                               **kwargs)
 
     def _define_uncertainty_model(self,
@@ -302,13 +298,13 @@ class TabulaRasaRegressor:
                                                                   module__dim_input=self.model_layers[-1] + len(self.monotonic_constraints),
                                                                   module__dim_certificates=dim_certificates)
 
-    def _ingest(self, df):
+    def _ingest(self, X, y):
         '''
         Read data frame on initialize and setup necessary attributes used later to define models
 
         Parameters
         ----------
-        df : pandas.DataFrame
+        X : pandas.DataFrame
             Data frame that represents training input.
             No training is done during the initialization phase, but categories are counted and feature scalers are setup.
             So, if using a sample of the full dataset, it should be representative of the whole.
@@ -317,16 +313,16 @@ class TabulaRasaRegressor:
         -------
         None
         '''
-        self._prepare_categoricals(df)
-        self._prepare_numerics(df)
+        self._prepare_categoricals(X)
+        self._prepare_numerics(X, y)
 
-    def _prepare_categoricals(self, df):
+    def _prepare_categoricals(self, X):
         '''
         Count unique values and create mappings for categorical features 
         
         Parameters
         ----------
-        df : pandas.DataFrame
+        X : pandas.DataFrame
             Data frame that represents training input.
 
         Returns
@@ -334,48 +330,50 @@ class TabulaRasaRegressor:
         None
         '''
         # TODO: allow for specifying dim in and out
-        self.categoricals = df[self.features].select_dtypes(include=['category', 'object']).columns.to_list()
+        self.categoricals = X[self.features].select_dtypes(include=['category', 'object']).columns.to_list()
         self.categoricals_in = []
         self.categoricals_out = []
         self.categoricals_maps = []
         for c in self.categoricals:
-            if df[c].dtype == 'category':
-                u = sorted(df[c].cat.categories.values)
+            if X[c].dtype == 'category':
+                u = sorted(X[c].cat.categories.values)
             else:
-                u = sorted(df[c].unique())
+                u = sorted(X[c].unique())
             self.categoricals_in.append(len(u) + 1)
             self.categoricals_out.append(min(max(round(np.sqrt(len(u))), 1), 256))
             self.categoricals_maps.append({v: i for i, v in enumerate(u, 1)})
 
-    def _prepare_numerics(self, df):
+    def _prepare_numerics(self, X, y):
         '''
         Create standard scalers for numeric features and target(s)
 
         Parameters
         ----------
-        df : pandas.DataFrame
+        X : pandas.DataFrame
             Data frame that represents training input.
+        y : pandas.DataFrame or numpy.array
+            Data frame or array that represents training targets
 
         Returns
         -------
         None
         '''
-        numerics = df[self.features].select_dtypes(include='number').columns
+        numerics = X[self.features].select_dtypes(include='number').columns
         self.numerics = numerics.to_list()
         self.numerics_non_monotonic = numerics.difference(self.monotonic_constraints.keys()).to_list()
-        df[self.numerics] = df[self.numerics]
+        # X[self.numerics] = X[self.numerics]
         self.numerics_scaler = StandardScaler()
-        self.numerics_scaler.fit(df[self.numerics])
+        self.numerics_scaler.fit(X[self.numerics])
         self.targets_scaler = StandardScaler()
-        self.targets_scaler.fit(df[self.targets])
+        self.targets_scaler.fit(y.values)
 
-    def _preprocess(self, df):
+    def _preprocess(self, X):
         '''
         Encode categorical features and scale or transform continuous features
 
         Parameters
         ----------
-        df : pandas.DataFrame
+        X : pandas.DataFrame
             Data frame of training or prediction input
 
         Returns
@@ -384,22 +382,22 @@ class TabulaRasaRegressor:
             Transformed data frame appropriate for training or prediction
         '''
         # TODO: figure out more memory efficient way to do this
-        dfc = df.copy()
+        Xc = X.copy()
         for c, m in zip(self.categoricals, self.categoricals_maps):
-            dfc[c] = dfc[c].map(m).astype('int').fillna(0)
-        dfc[self.numerics] = self.numerics_scaler.transform(dfc[self.numerics])
+            Xc[c] = Xc[c].map(m).astype('int').fillna(0)
+        Xc[self.numerics] = self.numerics_scaler.transform(Xc[self.numerics])
         # TODO: Should S be a vector to support multi-target regression?
         for c, s in self.monotonic_constraints.items():
-            dfc[c] = dfc[c] * s
-        return dfc
+            Xc[c] = Xc[c] * s
+        return Xc
 
-    def _preprocess_targets(self, df):
+    def _preprocess_targets(self, y):
         '''
         Scale target variable(s)
 
         Parameters
         ----------
-        df : pandas.DataFrame
+        y : pandas.DataFrame or numpy.array
             Data frame of training or prediction input
 
         Returns
@@ -408,9 +406,7 @@ class TabulaRasaRegressor:
             Transformed data frame appropriate for training or prediction
         '''
         # TODO: figure out more memory efficient way to do this
-        dfc = df.copy()
-        dfc[self.targets] = self.targets_scaler.transform(dfc[self.targets])
-        return dfc
+        return self.targets_scaler.transform(y.copy().values)
 
     def _postprocess_targets(self, predictions):
         '''
@@ -428,65 +424,72 @@ class TabulaRasaRegressor:
         '''
         return self.targets_scaler.inverse_transform(predictions)
 
-    def fit(self, df):
+    def fit(self, X, y):
         '''
         Trains montonically constrained, Orthonormal Certificates, and Simultaneous Quantiles model
 
         Parameters
         ----------
-        df : pandas.DataFrame
+        X : pandas.DataFrame
             Data frame of training input
+        y : pandas.DataFrame or numpy.array
+            Data frame or array of targets
 
         Returns
         -------
         None
         '''
+        if not self.trained:
+            self._setup(X, y)
+
         # TODO: Should make this flexible in case there aren't categoricals or non monotonic continuous features
-        df_processed = self._preprocess_targets(self._preprocess(df)).copy()
-        X = {'X_monotonic': df_processed[sorted(self.monotonic_constraints.keys())].values.astype('float32'),
-             'X_categorical': df_processed[self.categoricals].values.astype('int'),
-             'X_non_monotonic': df_processed[self.numerics_non_monotonic].values.astype('float32')}
-        y = df_processed[self.targets].values.astype('float32')
+        Xp = self._preprocess(X)
+        Xd = {'X_monotonic': Xp[sorted(self.monotonic_constraints.keys())].values.astype('float32'),
+              'X_categorical': Xp[self.categoricals].values.astype('int'),
+              'X_non_monotonic': Xp[self.numerics_non_monotonic].values.astype('float32')}
+        yp = self._preprocess_targets(y).astype('float32')
         print('*** Training expectation model ***')
-        self.model.fit(X, y)
+        self.model.fit(Xd, yp)
         print('')
         print('*** Training epistemic uncertainty model ***')
-        h = self.model.predict(X, last_hidden_layer=True)
-        self.uncertainty_model.fit(np.concatenate([X['X_monotonic'], h], axis=1))
+        h = self.model.predict(Xd, last_hidden_layer=True)
+        self.uncertainty_model.fit(np.concatenate([Xd['X_monotonic'], h], axis=1))
         print('')
         print('*** Training quantile prediction model ***')
-        e = y - self.model.predict(X)
-        self.quantiles_model.fit(X, e)
+        e = yp - self.model.predict(Xd)
+        self.quantiles_model.fit(Xd, e)
 
-    def predict(self, df):
+        self.trained = True
+
+    def predict(self, X):
         '''
         Predict target from monotonically constrained model
 
         Parameters
         ----------
-        df : pandas.DataFrame
-            Data frame with trained feature values
+        X : pandas.DataFrame
+            Data frame with feature values
 
         Returns
         -------
         numpy.ndarray
             Predictions from base model
         '''
-        df_processed = self._preprocess(df)
-        X = {'X_monotonic': df_processed[sorted(self.monotonic_constraints.keys())].values.astype('float32'),
-             'X_categorical': df_processed[self.categoricals].values.astype('int'),
-             'X_non_monotonic': df_processed[self.numerics_non_monotonic].values.astype('float32')}
-        y = self.model.predict(X)
-        return self._postprocess_targets(y)
+        Xp = self._preprocess(X)
+        Xd = {'X_monotonic': Xp[sorted(self.monotonic_constraints.keys())].values.astype('float32'),
+              'X_categorical': Xp[self.categoricals].values.astype('int'),
+              'X_non_monotonic': Xp[self.numerics_non_monotonic].values.astype('float32')}
+        predictions = self.model.predict(Xd)
+        return self._postprocess_targets(predictions)
 
-    def predict_quantile(self, df, q=0.5):
+    def predict_quantile(self, X, q=0.5):
         '''
         Predict target quantile from Simultaneous Quantiles model
 
         Parameters
         ----------
-        df : pandas.DataFrame
-            Data frame with trained feature values
+        X : pandas.DataFrame
+            Data frame with feature values
         q : float, optional
             Target quantile to predict (defaults to 0.5)
 
@@ -495,22 +498,22 @@ class TabulaRasaRegressor:
         numpy.ndarray
             Predicted quantile
         '''
-        df_processed = self._preprocess(df)
-        X = {'X_monotonic': df_processed[sorted(self.monotonic_constraints.keys())].values.astype('float32'),
-             'X_categorical': df_processed[self.categoricals].values.astype('int'),
-             'X_non_monotonic': df_processed[self.numerics_non_monotonic].values.astype('float32')}
-        y = self.model.predict(X)
-        e = self.quantiles_model.predict(X, q=q)
-        return self._postprocess_targets(y + e)
+        Xp = self._preprocess(X)
+        Xd = {'X_monotonic': Xp[sorted(self.monotonic_constraints.keys())].values.astype('float32'),
+              'X_categorical': Xp[self.categoricals].values.astype('int'),
+              'X_non_monotonic': Xp[self.numerics_non_monotonic].values.astype('float32')}
+        predictions = self.model.predict(Xd)
+        e = self.quantiles_model.predict(Xd, q=q)
+        return self._postprocess_targets(predictions + e)
 
-    def estimate_uncertainty(self, df):
+    def estimate_uncertainty(self, X):
         '''
         Estimate epistemic uncertainty of montonically constrained model
 
         Parameters
         ----------
-        df : pandas.DataFrame
-            Data frame with trained feature values
+        X : pandas.DataFrame
+            Data frame with feature values
 
         Returns
         -------
@@ -518,9 +521,9 @@ class TabulaRasaRegressor:
             Ratio of epistemic uncertainty to max value seen in validation data
             (> 1 is higher uncertainty than seen in validation, < 1 is less)
         '''
-        df_processed = self._preprocess(df)
-        X = {'X_monotonic': df_processed[sorted(self.monotonic_constraints.keys())].values.astype('float32'),
-             'X_categorical': df_processed[self.categoricals].values.astype('int'),
-             'X_non_monotonic': df_processed[self.numerics_non_monotonic].values.astype('float32')}
-        h = self.model.predict(X, last_hidden_layer=True)
-        return self.uncertainty_model.scaled_predict(np.concatenate([X['X_monotonic'], h], axis=1))
+        Xp = self._preprocess(X)
+        Xd = {'X_monotonic': Xp[sorted(self.monotonic_constraints.keys())].values.astype('float32'),
+              'X_categorical': Xp[self.categoricals].values.astype('int'),
+              'X_non_monotonic': Xp[self.numerics_non_monotonic].values.astype('float32')}
+        h = self.model.predict(Xd, last_hidden_layer=True)
+        return self.uncertainty_model.scaled_predict(np.concatenate([Xd['X_monotonic'], h], axis=1))
